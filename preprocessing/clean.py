@@ -6,6 +6,8 @@ data/raw/news_data.json (원본, 수정하지 않음)
   -> data/processed/news_data_clean.json  (정제 결과)
   -> data/processed/clean_report.json     (규칙별 적용 건수)
 
+실행: uv run python preprocessing/clean.py
+
 정제 범위
   1) 꼬리 boilerplate 제거 : 제보 안내, 기자 이메일 서명, 저작권, 방송 크레딧
   2) 짧은 기사 필터
@@ -29,8 +31,10 @@ import hashlib
 from collections import Counter, OrderedDict
 from pathlib import Path
 
-# 데이터는 모두 data/ 아래에 둔다. 실행 위치와 무관하게 찾도록 파일 기준 경로를 쓴다.
-DATA_DIR = Path(__file__).resolve().parent / "data"
+# 데이터는 모두 프로젝트 루트의 data/ 아래에 둔다.
+# 실행 위치와 무관하게 찾도록 이 파일(preprocessing/clean.py) 기준 경로를 쓴다.
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+DATA_DIR = PROJECT_ROOT / "data"
 RAW_DIR = DATA_DIR / "raw"
 PROCESSED_DIR = DATA_DIR / "processed"
 

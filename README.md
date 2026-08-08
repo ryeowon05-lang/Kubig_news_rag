@@ -2,14 +2,18 @@
 
 한국 금융 뉴스 기반 RAG 에이전트 프로젝트.
 
-현재는 1주차 산출물인 네이버 금융 종목 뉴스 크롤러(`crawler.ipynb`)와
-정제 스크립트(`clean.py`), 그리고 그 결과 데이터가 포함되어 있습니다.
+현재는 1주차 산출물인 데이터 준비 단계(수집 + 정제)와 그 결과 데이터가
+포함되어 있습니다.
 
-## 데이터 구조
+## 폴더 구조
 
-데이터 파일은 모두 `data/` 아래에 둡니다.
+전처리 코드는 `preprocessing/`, 데이터는 `data/` 아래로 나눠 둡니다.
 
 ```
+preprocessing/                  # 데이터 준비 단계 코드
+├── crawler.ipynb               # 네이버 금융 종목 뉴스 수집
+└── clean.py                    # 수집 결과 정제
+
 data/
 ├── raw/                        # 수집 원본 (수정하지 않음)
 │   ├── news_data.json          # 크롤러 산출물
@@ -44,12 +48,13 @@ uv sync --no-dev # 실행 의존성만 설치
 ## 실행
 
 ```bash
-uv run jupyter lab           # 크롤러 노트북 실행 (커널: 프로젝트 .venv)
-uv run python clean.py       # 수집 결과 정제
+uv run jupyter lab                      # 크롤러 노트북 실행 (커널: 프로젝트 .venv)
+uv run python preprocessing/clean.py    # 수집 결과 정제
 ```
 
-두 단계 모두 프로젝트 루트에서 실행하세요. 크롤러는 `data/raw/`에,
-정제 스크립트는 `data/processed/`에 결과를 씁니다(폴더는 자동 생성).
+크롤러는 `data/raw/`에, 정제 스크립트는 `data/processed/`에 결과를 씁니다
+(폴더는 자동 생성). 두 코드 모두 `pyproject.toml`이 있는 폴더를 프로젝트
+루트로 잡으므로, 어느 디렉터리에서 실행하든 같은 `data/`를 바라봅니다.
 
 > `crawler.ipynb`의 첫 셀에는 예전에 사용하던 `!pip install ...`이 남아 있습니다.
 > uv 환경에서는 불필요하며, 실행하면 잠긴 버전과 어긋날 수 있으니 건너뛰세요.
