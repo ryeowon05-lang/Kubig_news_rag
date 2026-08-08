@@ -9,6 +9,11 @@ __pycache__/
 # 크롤러 중간 저장 (재실행 시 이어받기용, 산출물은 data/raw/news_data.json)
 data/raw/crawl_cache/
 
+# 생성되는 청크/벡터 인덱스와 모델 캐시
+data/processed/news_chunks.jsonl
+data/chroma/
+.cache/huggingface/
+
 # 환경 변수 (API 키 등)
 .env
 .env.*
