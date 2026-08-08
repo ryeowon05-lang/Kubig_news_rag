@@ -18,3 +18,4 @@ data/raw/crawl_cache/
 .vscode/
 .idea/
 .DS_Store
+.claude/
