@@ -6,8 +6,8 @@ __pycache__/
 # Jupyter
 .ipynb_checkpoints/
 
-# 크롤러 중간 저장 (재실행 시 이어받기용, 산출물은 news_data.json)
-crawl_cache/
+# 크롤러 중간 저장 (재실행 시 이어받기용, 산출물은 data/raw/news_data.json)
+data/raw/crawl_cache/
 
 # 환경 변수 (API 키 등)
 .env

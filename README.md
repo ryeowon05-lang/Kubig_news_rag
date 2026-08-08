@@ -3,7 +3,21 @@
 한국 금융 뉴스 기반 RAG 에이전트 프로젝트.
 
 현재는 1주차 산출물인 네이버 금융 종목 뉴스 크롤러(`crawler.ipynb`)와
-수집 결과(`news_data.json`, 10개 종목 × 30건 = 300건)가 포함되어 있습니다.
+정제 스크립트(`clean.py`), 그리고 그 결과 데이터가 포함되어 있습니다.
+
+## 데이터 구조
+
+데이터 파일은 모두 `data/` 아래에 둡니다.
+
+```
+data/
+├── raw/                        # 수집 원본 (수정하지 않음)
+│   ├── news_data.json          # 크롤러 산출물
+│   └── crawl_cache/            # 종목별 중간 저장 (git 미추적)
+└── processed/                  # 정제 결과
+    ├── news_data_clean.json    # clean.py 산출물
+    └── clean_report.json       # 정제 규칙별 적용 건수
+```
 
 ## 환경 설정 (uv)
 
@@ -30,15 +44,18 @@ uv sync --no-dev # 실행 의존성만 설치
 ## 실행
 
 ```bash
-uv run jupyter lab           # 노트북으로 실행 (커널: 프로젝트 .venv)
-uv run python crawler.py     # 스크립트로 분리한 경우
+uv run jupyter lab           # 크롤러 노트북 실행 (커널: 프로젝트 .venv)
+uv run python clean.py       # 수집 결과 정제
 ```
+
+두 단계 모두 프로젝트 루트에서 실행하세요. 크롤러는 `data/raw/`에,
+정제 스크립트는 `data/processed/`에 결과를 씁니다(폴더는 자동 생성).
 
 > `crawler.ipynb`의 첫 셀에는 예전에 사용하던 `!pip install ...`이 남아 있습니다.
 > uv 환경에서는 불필요하며, 실행하면 잠긴 버전과 어긋날 수 있으니 건너뛰세요.
 
-크롤러는 네이버 금융에 실제 요청을 보냅니다(요청 간 1초 대기, 총 수 분 소요).
-이미 수집된 결과가 `news_data.json`에 있으므로 재수집은 필요할 때만 하세요.
+크롤러는 네이버 금융에 실제 요청을 보냅니다(요청 간 1초 대기, 총 20~30분 소요).
+이미 수집된 결과가 `data/raw/news_data.json`에 있으므로 재수집은 필요할 때만 하세요.
 
 ## 의존성
 

@@ -2,9 +2,9 @@
 """
 뉴스 데이터 정제 (1주차 3번)
 
-news_data.json (원본, 수정하지 않음)
-  -> news_data_clean.json  (정제 결과)
-  -> clean_report.json     (규칙별 적용 건수)
+data/raw/news_data.json (원본, 수정하지 않음)
+  -> data/processed/news_data_clean.json  (정제 결과)
+  -> data/processed/clean_report.json     (규칙별 적용 건수)
 
 정제 범위
   1) 꼬리 boilerplate 제거   : 제보 안내, 기자 이메일 서명, 저작권, 방송 크레딧
@@ -21,10 +21,16 @@ import json
 import re
 import hashlib
 from collections import Counter, OrderedDict
+from pathlib import Path
 
-SRC = "news_data.json"
-DST = "news_data_clean.json"
-REPORT = "clean_report.json"
+# 데이터는 모두 data/ 아래에 둔다. 실행 위치와 무관하게 찾도록 파일 기준 경로를 쓴다.
+DATA_DIR = Path(__file__).resolve().parent / "data"
+RAW_DIR = DATA_DIR / "raw"
+PROCESSED_DIR = DATA_DIR / "processed"
+
+SRC = RAW_DIR / "news_data.json"
+DST = PROCESSED_DIR / "news_data_clean.json"
+REPORT = PROCESSED_DIR / "clean_report.json"
 
 MIN_LENGTH = 200   # 정제 후 이 길이 미만이면 탈락
 TAIL_ZONE = 400    # 꼬리 마커를 이 범위 안에서만 탐색 (본문 중간 이메일 오탐 방지)
@@ -126,6 +132,8 @@ def merge_group(group):
 
 
 def main():
+    PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
+
     with open(SRC, encoding="utf-8") as f:
         raw = json.load(f)
     stats["input"] = len(raw)
