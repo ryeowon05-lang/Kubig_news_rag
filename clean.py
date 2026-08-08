@@ -7,14 +7,20 @@ data/raw/news_data.json (원본, 수정하지 않음)
   -> data/processed/clean_report.json     (규칙별 적용 건수)
 
 정제 범위
-  1) 꼬리 boilerplate 제거   : 제보 안내, 기자 이메일 서명, 저작권, 방송 크레딧
-  2) 본문 중간 사진 캡션 제거 : "<캡션문장>. [사진=매체]" 형태
-  3) 짧은 기사 필터
-  4) 중복 기사 병합          : 종목 정보를 리스트로 보존
+  1) 꼬리 boilerplate 제거 : 제보 안내, 기자 이메일 서명, 저작권, 방송 크레딧
+  2) 짧은 기사 필터
+  3) 중복 기사 병합        : 종목 정보를 리스트로 보존
 
 앞머리(부제목/캡션) 제거는 하지 않는다.
   - 첫 청크 오염도가 0.6%에 그쳐 임베딩에 유의미한 영향이 없고,
   - 부제목은 기자가 쓴 요약문이라 오히려 검색에 유용하기 때문.
+
+본문 중간 사진 캡션("<캡션문장>. [사진=매체]")도 건드리지 않는다.
+  - 캡션 문장이 마침표로 끝나 마커만 떨어져 나갈 뿐, 정작 지우려던
+    "삼성전자 서초사옥 전경."은 본문에 그대로 남아 효과가 없었다.
+  - 전체 본문의 0.25%(1,140/459,448자)로 앞머리보다도 비중이 작다.
+  - "/사진=매체" 형태는 매체명 끝을 특정할 수 없어 뒤 단어를 깎아먹었다
+    ("...고승민코스피가" -> "...스피가").
 """
 
 import json
@@ -34,8 +40,6 @@ REPORT = PROCESSED_DIR / "clean_report.json"
 
 MIN_LENGTH = 200   # 정제 후 이 길이 미만이면 탈락
 TAIL_ZONE = 400    # 꼬리 마커를 이 범위 안에서만 탐색 (본문 중간 이메일 오탐 방지)
-
-MEDIA = r"연합뉴스|연합|뉴시스|뉴스1|AP=연합뉴스|로이터|EPA|AFP|게티이미지"
 
 stats = Counter()
 
@@ -74,25 +78,6 @@ def strip_tail(text):
     return text[:cut].strip()
 
 
-# ------------------------------------------------ 본문 중간 캡션 (기사 내 이미지)
-# "<캡션 문장>. [사진=매체]" 형태로 문단 사이에 끼어든다.
-# 마커만 지우면 캡션 문장이 본문에 남으므로 직전 문장 경계까지 함께 제거한다.
-INLINE_RULES = [
-    ("cap_bracket", r"[^.]{0,60}[\[\(〈]\s*사진\s*[=＝][^\]\)〉]{0,30}[\]\)〉]"),
-    ("cap_slash",   r"[^.]{0,60}/\s*사진\s*[=＝]\s*(?:" + MEDIA + r"|[가-힣]{2,4}(?=[가-힣]))"),
-    ("cap_provide", r"\(\s*사진\s*[=＝][^\)]{0,20}제공\s*\)"),
-]
-INLINE_COMPILED = [(n, re.compile(p)) for n, p in INLINE_RULES]
-
-
-def strip_inline(text):
-    for name, rx in INLINE_COMPILED:
-        text, n = rx.subn(" ", text)
-        if n:
-            stats[f"inline:{name}"] += n
-    return text
-
-
 # ---------------------------------------------------------------- 공통 정리
 def normalize(text):
     text = re.sub(r"[​﻿\xad]", "", text)   # 제로폭/BOM
@@ -100,7 +85,7 @@ def normalize(text):
 
 
 def clean_content(text):
-    return normalize(strip_inline(strip_tail(normalize(text))))
+    return normalize(strip_tail(normalize(text)))
 
 
 # ------------------------------------------------------------------ 중복 병합
@@ -167,7 +152,7 @@ def main():
     print(f"{stats['input']}건 -> {stats['output']}건")
     print(f"  짧아서 탈락 {stats['dropped_short']}건 / 중복 병합 {stats['merged_away']}건")
     for k in sorted(stats):
-        if k.startswith(("tail:", "inline:")):
+        if k.startswith("tail:"):
             print(f"  {k}: {stats[k]}")
 
 

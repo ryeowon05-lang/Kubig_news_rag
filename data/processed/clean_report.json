@@ -2,12 +2,10 @@
   "input": 300,
   "tail:byline_mail": 6,
   "tail:byline_box": 2,
-  "inline:cap_bracket": 55,
   "tail:jebo": 21,
   "tail:video_credit": 2,
   "tail:magazine": 3,
   "tail:bare_mail": 14,
-  "inline:cap_slash": 22,
   "tail:jebo_label": 5,
   "merged_away": 116,
   "output": 184
