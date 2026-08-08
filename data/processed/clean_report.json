@@ -1,12 +1,15 @@
 {
-  "input": 300,
-  "tail:byline_mail": 6,
-  "tail:byline_box": 2,
-  "tail:jebo": 21,
-  "tail:video_credit": 2,
-  "tail:magazine": 3,
-  "tail:bare_mail": 14,
-  "tail:jebo_label": 5,
-  "merged_away": 116,
-  "output": 184
+  "input": 600,
+  "tail:bare_mail": 30,
+  "tail:byline_mail": 9,
+  "tail:resale": 4,
+  "tail:jebo": 38,
+  "tail:magazine": 2,
+  "tail:byline_box": 1,
+  "tail:jebo_label": 9,
+  "tail:promo_url": 1,
+  "tail:photo_credit": 1,
+  "dropped_short": 1,
+  "merged_away": 167,
+  "output": 432
 }
