@@ -1,0 +1,167 @@
+# -*- coding: utf-8 -*-
+"""
+뉴스 데이터 정제 (1주차 3번)
+
+news_data.json (원본, 수정하지 않음)
+  -> news_data_clean.json  (정제 결과)
+  -> clean_report.json     (규칙별 적용 건수)
+
+정제 범위
+  1) 꼬리 boilerplate 제거   : 제보 안내, 기자 이메일 서명, 저작권, 방송 크레딧
+  2) 본문 중간 사진 캡션 제거 : "<캡션문장>. [사진=매체]" 형태
+  3) 짧은 기사 필터
+  4) 중복 기사 병합          : 종목 정보를 리스트로 보존
+
+앞머리(부제목/캡션) 제거는 하지 않는다.
+  - 첫 청크 오염도가 0.6%에 그쳐 임베딩에 유의미한 영향이 없고,
+  - 부제목은 기자가 쓴 요약문이라 오히려 검색에 유용하기 때문.
+"""
+
+import json
+import re
+import hashlib
+from collections import Counter, OrderedDict
+
+SRC = "news_data.json"
+DST = "news_data_clean.json"
+REPORT = "clean_report.json"
+
+MIN_LENGTH = 200   # 정제 후 이 길이 미만이면 탈락
+TAIL_ZONE = 400    # 꼬리 마커를 이 범위 안에서만 탐색 (본문 중간 이메일 오탐 방지)
+
+MEDIA = r"연합뉴스|연합|뉴시스|뉴스1|AP=연합뉴스|로이터|EPA|AFP|게티이미지"
+
+stats = Counter()
+
+
+# ---------------------------------------------------------------- 꼬리 제거
+# 아래 마커가 나타나면 "그 지점부터 끝까지" 버린다.
+# 꼬리에는 마커가 줄줄이 이어지므로, 순차 치환이 아니라 '가장 이른 지점'을 찾는다.
+TAIL_MARKERS = [
+    ("jebo",         r"[^.]{0,25}제보(가|를|로)[^.]{0,20}(됩니다|만들어집니다|기다리|바랍니다|함께)"),
+    ("jebo_label",   r"[▶※]\s*(카카오톡|이메일|전화|뉴스 홈페이지)\s*[:：]"),
+    ("resale",       r"\*?\s*재판매 및 DB\s*금지"),
+    ("byline_mail",  r"[가-힣]{2,4}(\s*[가-힣]{2,6})?\s*기자\s*[\w.\-]+@[\w.\-]+\.[a-zA-Z]{2,}"),
+    ("byline_box",   r"\[[^\]]{0,30}기자[^\]]{0,10}[\w.\-]+@[\w.\-]+\.[a-zA-Z]{2,}[^\]]{0,5}\]"),
+    ("magazine",     r"\[본\s*기사는[^\]]{0,60}기사입니다\]"),
+    ("copyright",    r"\[?Copyright\s*\(c\)|저작권자\s*[ⓒ©]|무단\s*전재|재배포\s*금지"),
+    ("video_credit", r"영상(기자|취재|편집|디자인)\s*[:：]"),
+    ("bare_mail",    r"\s*[\w.\-]+@[\w.\-]+\.[a-zA-Z]{2,}\s*$"),
+    ("promo_url",    r"(사이트\s*[:：]\s*)?https?://\S+\s*$"),
+    ("photo_credit", r"[^.]{0,40}(제공|촬영)\.?\s*$"),
+]
+TAIL_COMPILED = [(name, re.compile(p)) for name, p in TAIL_MARKERS]
+
+
+def strip_tail(text):
+    zone_start = max(0, len(text) - TAIL_ZONE)
+    cut = len(text)
+    hits = []
+    for name, rx in TAIL_COMPILED:
+        m = rx.search(text, zone_start)
+        if m and m.start() < cut:
+            cut = m.start()
+            hits.append(name)
+    if cut < len(text):
+        for h in hits:
+            stats[f"tail:{h}"] += 1
+    return text[:cut].strip()
+
+
+# ------------------------------------------------ 본문 중간 캡션 (기사 내 이미지)
+# "<캡션 문장>. [사진=매체]" 형태로 문단 사이에 끼어든다.
+# 마커만 지우면 캡션 문장이 본문에 남으므로 직전 문장 경계까지 함께 제거한다.
+INLINE_RULES = [
+    ("cap_bracket", r"[^.]{0,60}[\[\(〈]\s*사진\s*[=＝][^\]\)〉]{0,30}[\]\)〉]"),
+    ("cap_slash",   r"[^.]{0,60}/\s*사진\s*[=＝]\s*(?:" + MEDIA + r"|[가-힣]{2,4}(?=[가-힣]))"),
+    ("cap_provide", r"\(\s*사진\s*[=＝][^\)]{0,20}제공\s*\)"),
+]
+INLINE_COMPILED = [(n, re.compile(p)) for n, p in INLINE_RULES]
+
+
+def strip_inline(text):
+    for name, rx in INLINE_COMPILED:
+        text, n = rx.subn(" ", text)
+        if n:
+            stats[f"inline:{name}"] += n
+    return text
+
+
+# ---------------------------------------------------------------- 공통 정리
+def normalize(text):
+    text = re.sub(r"[​﻿\xad]", "", text)   # 제로폭/BOM
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def clean_content(text):
+    return normalize(strip_inline(strip_tail(normalize(text))))
+
+
+# ------------------------------------------------------------------ 중복 병합
+def dup_key(text):
+    """공백/기호를 무시한 본문 해시. 완전일치만 병합한다.
+
+    근접중복(자카드 0.35↑)은 184건 중 1건뿐인 반면, 제목이 같아도 내용이
+    다른 연재물([서울데이터랩] 등)이 있어 제목 기준 병합은 오히려 위험하다.
+    """
+    return hashlib.md5(re.sub(r"[^가-힣a-zA-Z0-9]", "", text).encode()).hexdigest()
+
+
+def merge_group(group):
+    base = max(group, key=lambda a: len(a["title"]))   # 덜 잘린 제목 우선
+    names, codes = OrderedDict(), OrderedDict()
+    for a in group:
+        names[a["stock_name"]] = None
+        codes[a["stock_code"]] = None
+    return {
+        "title":       base["title"],
+        "content":     base["_clean"],
+        "date":        base["date"],
+        "url":         base["url"],
+        "stock_names": list(names),
+        "stock_codes": list(codes),
+        "source_ids":  sorted(a["id"] for a in group),
+        "doc_type":    base["_type"],
+    }
+
+
+def main():
+    with open(SRC, encoding="utf-8") as f:
+        raw = json.load(f)
+    stats["input"] = len(raw)
+
+    for a in raw:
+        a["_type"] = "broadcast" if re.search(r"\[앵커\]|\[기자\]", a["content"]) else "article"
+        a["_clean"] = clean_content(a["content"])
+
+    kept = []
+    for a in raw:
+        if len(a["_clean"]) < MIN_LENGTH:
+            stats["dropped_short"] += 1
+        else:
+            kept.append(a)
+
+    groups = OrderedDict()
+    for a in kept:
+        groups.setdefault(dup_key(a["_clean"]), []).append(a)
+    stats["merged_away"] = len(kept) - len(groups)
+
+    docs = [merge_group(g) for g in groups.values()]
+    for i, d in enumerate(docs, 1):
+        d["id"] = i
+    stats["output"] = len(docs)
+
+    with open(DST, "w", encoding="utf-8") as f:
+        json.dump(docs, f, ensure_ascii=False, indent=2)
+    with open(REPORT, "w", encoding="utf-8") as f:
+        json.dump(dict(stats), f, ensure_ascii=False, indent=2)
+
+    print(f"{stats['input']}건 -> {stats['output']}건")
+    print(f"  짧아서 탈락 {stats['dropped_short']}건 / 중복 병합 {stats['merged_away']}건")
+    for k in sorted(stats):
+        if k.startswith(("tail:", "inline:")):
+            print(f"  {k}: {stats[k]}")
+
+
+if __name__ == "__main__":
+    main()
