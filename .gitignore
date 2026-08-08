@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# 환경 변수 (API 키 등)
+.env
+.env.*
+!.env.example
+
+# 에디터 / OS
+.vscode/
+.idea/
+.DS_Store
