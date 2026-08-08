@@ -1,7 +1,7 @@
 {
   "input": 600,
   "tail:bare_mail": 30,
-  "tail:byline_mail": 9,
+  "tail:byline_mail": 8,
   "tail:resale": 4,
   "tail:jebo": 38,
   "tail:magazine": 2,

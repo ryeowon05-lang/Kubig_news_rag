@@ -73,12 +73,14 @@ def strip_tail(text):
     hits = []
     for name, rx in TAIL_COMPILED:
         m = rx.search(text, zone_start)
-        if m and m.start() < cut:
+        if m is None or m.start() > cut:
+            continue
+        if m.start() < cut:   # 더 이른 지점을 찾았으면 집계를 다시 시작한다
             cut = m.start()
-            hits.append(name)
-    if cut < len(text):
-        for h in hits:
-            stats[f"tail:{h}"] += 1
+            hits = []
+        hits.append(name)     # 같은 지점에서 겹친 마커는 함께 센다
+    for name in hits:
+        stats[f"tail:{name}"] += 1
     return text[:cut].strip()
 
 
@@ -89,7 +91,8 @@ def normalize(text):
 
 
 def clean_content(text):
-    return normalize(strip_tail(normalize(text)))
+    # strip_tail은 잘라내기만 하므로 정규화는 앞에서 한 번이면 된다.
+    return strip_tail(normalize(text))
 
 
 # ------------------------------------------------------------------ 중복 병합
