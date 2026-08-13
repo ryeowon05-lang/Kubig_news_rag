@@ -8,6 +8,11 @@ from pathlib import Path
 import chromadb
 
 try:
+    from indexing.query_preprocess import normalize_query
+except ModuleNotFoundError:  # Direct execution: python indexing/search.py
+    from query_preprocess import normalize_query  # type: ignore[no-redef]
+
+try:
     from indexing.build_index import (
         DEFAULT_COLLECTION,
         DEFAULT_DB,
@@ -28,9 +33,7 @@ except ModuleNotFoundError:  # Direct execution: python indexing/search.py
 
 
 def search_collection(collection, embedder: Embedder, query: str, top_k: int = 5) -> list[dict]:
-    query = query.strip()
-    if not query:
-        raise ValueError("query cannot be empty")
+    query = normalize_query(query)
     if top_k < 1:
         raise ValueError("top_k must be at least 1")
     count = collection.count()

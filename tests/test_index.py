@@ -7,7 +7,11 @@ from indexing.search import search_collection
 
 
 class DeterministicEmbedder:
+    def __init__(self):
+        self.encoded_texts = []
+
     def encode(self, texts, batch_size=None):
+        self.encoded_texts.extend(texts)
         vectors = []
         for text in texts:
             vectors.append([1.0, 0.0] if "반도체" in text else [0.0, 1.0])
@@ -75,6 +79,17 @@ def test_search_restores_list_metadata(tmp_path):
     assert results[0]["content"] == "반도체 실적"
     assert results[0]["stock_names"] == ["삼성전자", "SK하이닉스"]
     assert results[0]["distance"] == 0.0
+
+
+def test_search_normalizes_query_before_embedding(tmp_path):
+    source = tmp_path / "chunks.jsonl"
+    write_jsonl(source, [chunk("semiconductor", "반도체 실적", ["삼성전자"])])
+    collection = build_index(source, tmp_path / "chroma", "test_normalized_search", DeterministicEmbedder())
+    embedder = DeterministicEmbedder()
+
+    search_collection(collection, embedder, "  삼전   반도체 전망  ")
+
+    assert embedder.encoded_texts == ["삼성전자 반도체 전망"]
 
 
 def test_search_script_can_run_directly():

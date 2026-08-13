@@ -60,6 +60,16 @@ uv run python indexing/build_index.py --rebuild --batch-size 8 --device cpu
 uv run python indexing/search.py "삼성전자 반도체 실적 전망" --top-k 5
 ```
 
+Dense 검색은 임베딩 전에 Query의 Unicode와 공백을 정리하고 알려진 종목명 별칭을
+정규화합니다. 예를 들어 `삼전 반도체 전망`은 `삼성전자 반도체 전망`으로,
+`네이버 AI와 현대자동차 전략`은 `NAVER AI와 현대차 전략`으로 검색됩니다.
+지원하는 canonical 종목명은 다음과 같습니다.
+
+```text
+삼성전자, SK하이닉스, 현대차, LG에너지솔루션, 삼성바이오로직스,
+KB금융, HD현대중공업, 한화에어로스페이스, 두산에너빌리티, NAVER
+```
+
 임베딩 모델은 `BAAI/bge-m3`를 사용합니다. 최초 실행 시 모델 다운로드가 크고 오래
 걸릴 수 있습니다. 생성되는 `data/processed/news_chunks.jsonl`과 `data/chroma/`는
 재생성 가능한 대용량 산출물이므로 Git에서 제외합니다.
@@ -73,6 +83,11 @@ uv run python indexing/search.py "삼성전자 반도체 실적 전망" --top-k 
 `content`, 제목과 본문을 합친 `embedding_text`, `date`, `url`, `stock_names`,
 `stock_codes`, `source_ids`, `doc_type`을 가집니다. Chroma에는 세 리스트 필드를 JSON
 문자열로 저장하고 검색 시 다시 리스트로 복원합니다.
+
+> **메타데이터 주의:** 현재 `stock_names`는 본문에서 언급된 모든 종목이 아니라
+> 기사를 수집한 네이버 금융 종목 뉴스 페이지를 나타냅니다. 따라서 Query에서
+> 정규화한 종목명으로 `stock_names` 필터를 적용하지 않습니다. 향후 종목 필터가
+> 필요하면 `source_page_stocks`와 `mentioned_stocks`의 분리를 별도로 논의해야 합니다.
 
 크롤러는 `data/raw/`에, 정제 스크립트는 `data/processed/`에 결과를 씁니다
 (폴더는 자동 생성). 두 코드 모두 `pyproject.toml`이 있는 폴더를 프로젝트
