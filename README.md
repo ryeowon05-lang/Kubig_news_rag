@@ -70,6 +70,9 @@ Dense 검색은 임베딩 전에 Query의 Unicode와 공백을 정리하고 알�
 KB금융, HD현대중공업, 한화에어로스페이스, 두산에너빌리티, NAVER
 ```
 
+`--device`는 `cpu`, `cuda`(NVIDIA GPU), `mps`(Apple Silicon GPU) 중에 고릅니다.
+CPU로 1,377개 청크를 인덱싱하면 30분 이상 걸리므로 GPU가 있으면 지정하세요.
+
 임베딩 모델은 `BAAI/bge-m3`를 사용합니다. 최초 실행 시 모델 다운로드가 크고 오래
 걸릴 수 있습니다. 생성되는 `data/processed/news_chunks.jsonl`과 `data/chroma/`는
 재생성 가능한 대용량 산출물이므로 Git에서 제외합니다.
@@ -88,6 +91,28 @@ KB금융, HD현대중공업, 한화에어로스페이스, 두산에너빌리티,
 > 기사를 수집한 네이버 금융 종목 뉴스 페이지를 나타냅니다. 따라서 Query에서
 > 정규화한 종목명으로 `stock_names` 필터를 적용하지 않습니다. 향후 종목 필터가
 > 필요하면 `source_page_stocks`와 `mentioned_stocks`의 분리를 별도로 논의해야 합니다.
+
+### 파이썬에서 Dense retrieval 호출
+
+LLM 파이프라인처럼 검색을 반복 호출하는 쪽에서는 `indexing/retriever.py`를 씁니다.
+Chroma 접속과 BGE-M3 로딩을 안에서 처리하므로 질문 문자열만 넘기면 됩니다.
+
+```python
+from indexing.retriever import get_retriever
+
+for hit in get_retriever().retrieve("삼전 반도체 실적 전망", top_k=5):
+    print(hit["similarity"], hit["title"], hit["date"], hit["url"])
+    print(hit["content"])
+```
+
+`get_retriever()`는 설정(DB 경로, collection, 모델, device)별로 인스턴스를 재사용하므로
+BGE-M3는 프로세스당 한 번만 로딩됩니다. collection과 모델은 첫 `retrieve()` 호출
+시점에 지연 로딩되며, 인덱스가 없으면 모델을 내려받기 전에 `FileNotFoundError`로
+끝납니다. GPU를 쓰려면 `get_retriever(device="cuda")`로 만듭니다.
+
+반환값은 청크 하나당 dict 하나이고 similarity 내림차순입니다. `chunk_id`, `content`,
+`distance`, `similarity`(= 1 - distance)와 청크 메타데이터 전체(`title`, `date`, `url`,
+`stock_names`, `doc_type` 등)를 담고 있어 답변의 출처 표기에 그대로 쓸 수 있습니다.
 
 크롤러는 `data/raw/`에, 정제 스크립트는 `data/processed/`에 결과를 씁니다
 (폴더는 자동 생성). 두 코드 모두 `pyproject.toml`이 있는 폴더를 프로젝트
