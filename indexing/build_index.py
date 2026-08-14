@@ -121,7 +121,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--db-path", type=Path, default=DEFAULT_DB)
     parser.add_argument("--collection", default=DEFAULT_COLLECTION)
     parser.add_argument("--model", default=DEFAULT_MODEL, choices=[DEFAULT_MODEL])
-    parser.add_argument("--device", choices=["cpu", "cuda"], default="cpu")
+    parser.add_argument("--device", choices=["cpu", "cuda", "mps"], default="cpu")
     parser.add_argument("--batch-size", type=int, default=8)
     parser.add_argument("--rebuild", action="store_true")
     return parser.parse_args()

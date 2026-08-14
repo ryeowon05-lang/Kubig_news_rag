@@ -62,7 +62,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--db-path", type=Path, default=DEFAULT_DB)
     parser.add_argument("--collection", default=DEFAULT_COLLECTION)
     parser.add_argument("--model", default=DEFAULT_MODEL, choices=[DEFAULT_MODEL])
-    parser.add_argument("--device", choices=["cpu", "cuda"], default="cpu")
+    parser.add_argument("--device", choices=["cpu", "cuda", "mps"], default="cpu")
     return parser.parse_args()
 
 

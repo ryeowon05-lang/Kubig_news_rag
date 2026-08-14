@@ -3,6 +3,8 @@ import subprocess
 import sys
 
 from indexing.build_index import build_index, deserialize_metadata, serialize_metadata
+from indexing.build_index import parse_args as build_index_args
+from indexing.search import parse_args as search_args
 from indexing.search import search_collection
 
 
@@ -90,6 +92,18 @@ def test_search_normalizes_query_before_embedding(tmp_path):
     search_collection(collection, embedder, "  삼전   반도체 전망  ")
 
     assert embedder.encoded_texts == ["삼성전자 반도체 전망"]
+
+
+def test_build_index_cli_accepts_apple_silicon_gpu(monkeypatch):
+    monkeypatch.setattr(sys, "argv", ["build_index.py", "--device", "mps"])
+
+    assert build_index_args().device == "mps"
+
+
+def test_search_cli_accepts_apple_silicon_gpu(monkeypatch):
+    monkeypatch.setattr(sys, "argv", ["search.py", "반도체 전망", "--device", "mps"])
+
+    assert search_args().device == "mps"
 
 
 def test_search_script_can_run_directly():
