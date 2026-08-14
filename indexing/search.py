@@ -50,7 +50,14 @@ def search_collection(collection, embedder: Embedder, query: str, top_k: int = 5
         response["ids"][0], response["documents"][0], response["metadatas"][0], response["distances"][0]
     ):
         item = deserialize_metadata(metadata)
-        item.update({"chunk_id": chunk_id, "content": content, "distance": float(distance)})
+        item.update(
+            {
+                "chunk_id": chunk_id,
+                "content": content,
+                "distance": float(distance),
+                "similarity": 1.0 - float(distance),
+            }
+        )
         results.append(item)
     return results
 
@@ -75,7 +82,7 @@ def main() -> None:
         raise SystemExit(f"collection not found: {args.collection} ({args.db_path})") from exc
     embedder = SentenceTransformerEmbedder(args.model, args.device)
     for rank, result in enumerate(search_collection(collection, embedder, args.query, args.top_k), 1):
-        print(f"\n[{rank}] distance={result['distance']:.6f} similarity={1 - result['distance']:.6f}")
+        print(f"\n[{rank}] distance={result['distance']:.6f} similarity={result['similarity']:.6f}")
         print(f"title: {result.get('title', '')}")
         print(f"date: {result.get('date', '')}")
         print(f"stocks: {result.get('stock_names', [])}")
