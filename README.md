@@ -154,6 +154,45 @@ BM25 인덱스는 `news_chunks.jsonl`을 읽어 메모리에 만듭니다(1,377�
 > `HybridRetriever`가 이 경우를 감지해 경고하지만, 규칙을 바꿨다면 `chunk.py` →
 > `build_index.py --rebuild`를 함께 다시 실행하세요.
 
+### 질의 확장 (Multi-Query / HyDE)
+
+사용자가 쓴 표현은 기사에 그 답이 적혀 있는 여러 표현 중 하나일 뿐입니다. 질문을 여러
+검색어로 바꿔 각각 검색한 뒤 같은 RRF로 합칩니다.
+
+```python
+from indexing.expanding import ExpandingRetriever
+from indexing.hybrid import get_hybrid_retriever
+from indexing.query_expand import MultiQueryExpander, HyDEExpander
+
+retriever = ExpandingRetriever(
+    base=get_hybrid_retriever(device="mps"),
+    expander=MultiQueryExpander(),   # 또는 HyDEExpander()
+)
+hits = retriever.retrieve("왜 최근에 코스피가 떨어졌어?", top_k=5)
+print(hits[0]["expanded_queries"], hits[0]["matched_queries"])
+```
+
+| 방식 | 하는 일 |
+| --- | --- |
+| **Multi-Query** | 질문을 뉴스 어휘로 3가지쯤 바꿔 씀. `왜 최근에 코스피가 떨어졌어?` → `코스피 하락 원인`, `코스피 급락 이유`, `코스피 지수 하락 배경` |
+| **HyDE** | 답이 될 법한 가상 기사 본문을 지어내 그것으로 검색. 질문과 기사는 문체가 달라서, 기사처럼 생긴 텍스트를 임베딩하면 실제 기사에 더 가깝게 붙습니다 |
+
+**둘 다 원본 질문을 항상 첫 번째 검색어로 넣습니다.** 재작성은 주제를 벗어날 수 있고
+HyDE 본문은 아예 지어낸 것이라, 확실히 맞는 질의 하나를 융합의 안전망으로 남겨둡니다.
+같은 이유로 **LLM 호출이 실패하면 예외를 던지지 않고 원본 질문만으로 검색합니다** —
+확장은 최적화이지 필수 경로가 아닙니다.
+
+> ⚠️ **HyDE가 지어낸 본문은 검색용으로만 쓰입니다.** 답변 프롬프트는 여전히 사용자의
+> 원본 질문으로 만들어지므로, 지어낸 문장이 근거 자료로 모델에 들어가지 않습니다.
+> `tests/test_expanding.py`가 이 성질을 테스트로 고정하고 있습니다.
+
+`ExpandingRetriever`도 같은 `retrieve(question, top_k)` 인터페이스라 `RAGPipeline`에
+그대로 들어갑니다. 후속 질문을 독립형 검색어로 재작성하는 것도 "질문 → 검색어 여러 개"
+라서, 나중에 붙인다면 새 배관 없이 expander 하나만 추가하면 됩니다.
+
+**비용** — 질문마다 LLM 호출이 1회 더 듭니다. 검색 자체(BM25·Chroma)는 몇 배로 늘어도
+수십 ms 수준이라 무시할 만합니다.
+
 ### Streamlit UI
 
 ```bash
