@@ -114,6 +114,59 @@ BGE-M3는 프로세스당 한 번만 로딩됩니다. collection과 모델은 �
 `distance`, `similarity`(= 1 - distance)와 청크 메타데이터 전체(`title`, `date`, `url`,
 `stock_names`, `doc_type` 등)를 담고 있어 답변의 출처 표기에 그대로 쓸 수 있습니다.
 
+### Hybrid 검색 (Dense + BM25)
+
+Dense 검색은 의미를 맞추지만 정확한 토큰은 놓칩니다. 종목코드 `005930`으로 검색하면
+임베딩은 그게 뭘 가리키는지 모르기 때문에 무관한 기사가 1위로 올라옵니다. BM25가 그
+구멍을 메우고, 두 결과를 **RRF(Reciprocal Rank Fusion)** 로 합칩니다.
+
+```python
+from indexing.hybrid import get_hybrid_retriever
+
+hits = get_hybrid_retriever(device="mps").retrieve("005930 관련 뉴스", top_k=5)
+for h in hits:
+    print(h["rrf_score"], h["dense_rank"], h["bm25_rank"], h["title"])
+```
+
+`DenseRetriever`와 같은 `retrieve(question, top_k)` 인터페이스라서 `RAGPipeline`에
+그대로 넣을 수 있습니다. Dense 단독으로 쓰려면 `get_retriever()`를 그대로 쓰면 됩니다.
+
+**RRF 동작** — 각 검색기에서 후보를 `candidate_k`(기본 20)개씩 뽑고, 청크마다
+`sum(1 / (rrf_k + 순위))`를 더해 정렬합니다(`rrf_k` 기본 60). 점수가 아니라 **순위**로
+합치는 이유는 코사인 유사도(~0.6)와 BM25 점수(~12)가 서로 비교할 수 없는 척도이기
+때문입니다. 두 검색기가 함께 높게 본 청크가 한쪽만 좋아한 청크를 이깁니다.
+
+> **후보 풀은 top_k보다 넓어야 합니다.** 양쪽 top-5만 합치면 융합될 여지가 거의 없습니다.
+
+**한국어 BM25 토크나이저** — 공백으로 자르면 질문의 `삼성전자`가 본문의 `삼성전자의`와
+매칭되지 않아 BM25가 아무 일도 못 합니다. `kiwipiepy`로 형태소를 분리해 조사를 떼고
+어간만 남깁니다. 명사·외국어(`SL`)·숫자(`SN`)·용언 어간을 남기는데, `SL`이 특히
+중요합니다 — NAVER, SK, HBM, AI가 전부 여기 걸립니다.
+
+konlpy나 mecab을 쓰지 않은 이유는 Java나 C 라이브러리가 필요해 팀원 환경에 따라 설치가
+깨지고, `uv.lock`으로 맞춰둔 재현성이 무너지기 때문입니다. kiwipiepy는 순수 wheel입니다.
+
+BM25 인덱스는 `news_chunks.jsonl`을 읽어 메모리에 만듭니다(1,377청크 기준 약 5초).
+별도 파일로 저장하지 않으므로 청크 파일과 어긋날 일이 없습니다.
+
+> ⚠️ **Chroma 인덱스와 청크 파일은 같은 `chunk.py` 실행 결과여야 합니다.** `chunk_id`가
+> 본문 해시라서 정제·청킹 규칙을 바꾸면 값이 전부 달라지고, RRF 조인이 조용히 실패합니다.
+> `HybridRetriever`가 이 경우를 감지해 경고하지만, 규칙을 바꿨다면 `chunk.py` →
+> `build_index.py --rebuild`를 함께 다시 실행하세요.
+
+### Streamlit UI
+
+```bash
+uv run streamlit run app.py
+```
+
+- **검색 방식**: Hybrid / Dense only 전환 — 같은 질문으로 두 방식을 비교할 수 있습니다
+- **검색만 (LLM 호출 안 함)**: 검색 결과만 봅니다. 리트리버를 튜닝할 때는 이 모드를
+  쓰세요. 답변 생성은 질문마다 Claude API 비용이 듭니다
+- 출처 카드마다 `RRF 0.0164 · dense #1 · bm25 —` 형태로 **어느 검색기가 이 청크를
+  올렸는지** 표시합니다
+- `ANTHROPIC_API_KEY`가 없으면 검색 전용으로 동작합니다
+
 크롤러는 `data/raw/`에, 정제 스크립트는 `data/processed/`에 결과를 씁니다
 (폴더는 자동 생성). 두 코드 모두 `pyproject.toml`이 있는 폴더를 프로젝트
 루트로 잡으므로, 어느 디렉터리에서 실행하든 같은 `data/`를 바라봅니다.
@@ -129,7 +182,14 @@ BGE-M3는 프로세스당 한 번만 로딩됩니다. collection과 모델은 �
 | --- | --- | --- |
 | 실행 | `requests` | 네이버 금융 뉴스 목록/기사 HTTP 요청 |
 | 실행 | `beautifulsoup4` | HTML 파싱 및 본문 추출 |
+| 실행 | `sentence-transformers` | BGE-M3 임베딩 |
+| 실행 | `chromadb` | 벡터 인덱스 저장·검색 |
+| 실행 | `kiwipiepy` | 한국어 형태소 분석 (BM25 토크나이저) |
+| 실행 | `rank-bm25` | BM25 키워드 검색 |
+| 실행 | `anthropic` | Claude API 답변 생성 |
+| 실행 | `streamlit` | 데모 UI |
 | 개발 | `ipykernel` | 주피터 노트북 커널 |
+| 개발 | `pytest` | 자동 테스트 |
 
 패키지 추가/삭제는 pip 대신 uv로 합니다. `uv.lock`이 함께 갱신되므로
 변경 사항을 커밋해 주세요.
