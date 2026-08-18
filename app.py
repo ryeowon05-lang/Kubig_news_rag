@@ -1,8 +1,14 @@
 """Streamlit UI for the Korean financial-news RAG pipeline.
 
-Two retrieval modes (dense-only and hybrid) over the same index, so the two can
-be compared on the same question. Retrieval-only mode skips the Claude call —
-use it while tuning retrieval, since every answer costs API credits.
+Two UI modes over the same pipeline:
+
+- **단일 질문** — one question, one answer, nothing remembered. This is the mode
+  for comparing retrieval settings, because each run is independent.
+- **대화** — a chat that keeps its history, so follow-ups work. An optional LLM
+  gate decides per turn whether the news index is needed at all.
+
+Retrieval-only skips the Claude call; use it while tuning retrieval, since every
+answer costs API credits.
 """
 
 from __future__ import annotations
@@ -64,6 +70,13 @@ def load_llm():
     from generation.llm import ClaudeClient
 
     return ClaudeClient()
+
+
+@st.cache_resource
+def load_gate():
+    from generation.router import SearchGate
+
+    return SearchGate(llm=load_llm())
 
 
 EXPANDERS = {
@@ -144,6 +157,28 @@ def render_chunk(rank: int, chunk: dict) -> None:
             st.markdown(f"[원문 보기]({chunk['url']})")
 
 
+def render_sources(sources: list[dict], searched: bool) -> None:
+    """Source cards under an answer, or why there are none."""
+    if not searched:
+        st.caption("이 답변은 검색 없이 대화 내용만으로 작성됐습니다.")
+        return
+    if not sources:
+        st.info("관련 뉴스를 찾지 못했습니다.")
+        return
+    with st.expander(f"출처 {len(sources)}건", expanded=False):
+        for source in sources:
+            render_chunk(source["news_number"], source)
+
+
+def build_retriever(is_hybrid, resolved_device, candidate_k, rrf_k, expander_name):
+    base = (
+        load_hybrid(resolved_device, candidate_k, rrf_k)
+        if is_hybrid
+        else load_dense(resolved_device)
+    )
+    return wrap_with_expansion(base, expander_name, candidate_k, rrf_k)
+
+
 # --- page -----------------------------------------------------------------
 
 # Rendered before the sidebar so the page still has a heading when a later check
@@ -151,8 +186,27 @@ def render_chunk(rank: int, chunk: dict) -> None:
 st.title("📰 한국 금융 뉴스 RAG")
 
 with st.sidebar:
+    has_key = bool(os.getenv("ANTHROPIC_API_KEY"))
+
+    st.header("UI 모드")
+    ui_mode = st.radio(
+        "화면",
+        ["단일 질문 (검색 실험)", "대화"],
+        index=0,
+        key="ui_mode",
+        label_visibility="collapsed",
+        help=(
+            "단일 질문: 매 질문이 독립적. 검색 설정을 바꿔가며 비교할 때 씁니다.\n\n"
+            "대화: 이력을 기억해 후속 질문이 됩니다."
+        ),
+    )
+    is_chat = ui_mode == "대화"
+
+    st.divider()
     st.header("검색 설정")
-    mode = st.radio("검색 방식", ["Hybrid (Dense + BM25)", "Dense only"], index=0)
+    mode = st.radio(
+        "검색 방식", ["Hybrid (Dense + BM25)", "Dense only"], index=0, key="search_mode"
+    )
     is_hybrid = mode.startswith("Hybrid")
 
     top_k = st.slider("top_k (최종 청크 수)", 1, 10, 5)
@@ -160,11 +214,11 @@ with st.sidebar:
     rrf_k = st.slider("RRF k", 10, 120, 60, disabled=not is_hybrid)
 
     st.divider()
-    has_key = bool(os.getenv("ANTHROPIC_API_KEY"))
     expander_name = st.radio(
         "질의 확장",
         list(EXPANDERS),
         index=0,
+        key="expander",
         disabled=not has_key,
         help=(
             "Multi-Query: 질문을 여러 표현으로 바꿔 각각 검색.\n\n"
@@ -178,12 +232,29 @@ with st.sidebar:
     st.divider()
     retrieval_only = st.checkbox(
         "검색만 (LLM 호출 안 함)",
+        key="retrieval_only",
         value=not has_key,
-        disabled=not has_key,
+        disabled=not has_key or is_chat,
         help="검색 결과만 봅니다. 답변 생성에는 Claude API 비용이 듭니다.",
+    )
+    if is_chat:
+        retrieval_only = False
+    use_gate = st.checkbox(
+        "검색 게이트 (LLM)",
+        key="use_gate",
+        value=True,
+        disabled=not has_key or not is_chat,
+        help=(
+            "매 턴 검색이 필요한지 LLM이 먼저 판단합니다. 인사나 "
+            "'더 쉽게 설명해줘' 같은 요청은 검색 없이 대화 내용만으로 답합니다.\n\n"
+            "턴당 LLM 호출이 1회 더 듭니다."
+        ),
     )
     if not has_key:
         st.warning("ANTHROPIC_API_KEY가 없어 검색 전용으로 동작합니다.")
+    if is_chat and st.button("대화 초기화", use_container_width=True):
+        st.session_state.chat = []
+        st.rerun()
 
     device = st.selectbox(
         "임베딩 device", ["auto", "cpu", "cuda", "mps"], index=0
@@ -193,7 +264,8 @@ with st.sidebar:
 
 st.caption(
     "네이버 금융 뉴스 432건 · 1,377청크 · BGE-M3 임베딩 + BM25 · "
-    f"현재 모드: **{mode}** · 질의 확장: **{expander_name}**"
+    f"검색: **{mode}** · 질의 확장: **{expander_name}**"
+    + (f" · 검색 게이트: **{'켜짐' if use_gate else '꺼짐'}**" if is_chat else "")
 )
 
 if not DEFAULT_DB.is_dir():
@@ -206,37 +278,79 @@ if not DEFAULT_DB.is_dir():
     )
     st.stop()
 
-question = st.text_input(
-    "질문", placeholder="예: 삼전 반도체 실적 전망은?", label_visibility="collapsed"
-)
-
-if question:
-    base = (
-        load_hybrid(resolved_device, candidate_k, rrf_k)
-        if is_hybrid
-        else load_dense(resolved_device)
+if not is_chat:
+    # --- 단일 질문 -----------------------------------------------------------
+    question = st.text_input(
+        "질문", placeholder="예: 삼전 반도체 실적 전망은?", label_visibility="collapsed"
     )
-    retriever = wrap_with_expansion(base, expander_name, candidate_k, rrf_k)
 
-    if retrieval_only:
-        with st.spinner("검색 중…"):
-            chunks = retriever.retrieve(question, top_k=top_k)
-        show_expanded_queries(chunks)
-        st.subheader(f"검색 결과 {len(chunks)}개")
-        if not chunks:
-            st.info("검색 결과가 없습니다.")
-        for rank, chunk in enumerate(chunks, 1):
-            render_chunk(rank, chunk)
-    else:
-        with st.spinner("검색하고 답변 생성 중…"):
-            response = RAGPipeline(retriever=retriever, llm=load_llm()).ask(
-                question, top_k=top_k
-            )
-        show_expanded_queries(response.sources)
-        st.subheader("답변")
-        st.write(response.answer)
-        st.subheader(f"출처 {len(response.sources)}건")
-        if not response.sources:
-            st.info("관련 뉴스를 찾지 못했습니다.")
-        for source in response.sources:
-            render_chunk(source["news_number"], source)
+    if question:
+        retriever = build_retriever(
+            is_hybrid, resolved_device, candidate_k, rrf_k, expander_name
+        )
+        if retrieval_only:
+            with st.spinner("검색 중…"):
+                chunks = retriever.retrieve(question, top_k=top_k)
+            show_expanded_queries(chunks)
+            st.subheader(f"검색 결과 {len(chunks)}개")
+            if not chunks:
+                st.info("검색 결과가 없습니다.")
+            for rank, chunk in enumerate(chunks, 1):
+                render_chunk(rank, chunk)
+        else:
+            with st.spinner("검색하고 답변 생성 중…"):
+                response = RAGPipeline(retriever=retriever, llm=load_llm()).ask(
+                    question, top_k=top_k
+                )
+            show_expanded_queries(response.sources)
+            st.subheader("답변")
+            st.write(response.answer)
+            st.subheader(f"출처 {len(response.sources)}건")
+            if not response.sources:
+                st.info("관련 뉴스를 찾지 못했습니다.")
+            for source in response.sources:
+                render_chunk(source["news_number"], source)
+
+else:
+    # --- 대화 ---------------------------------------------------------------
+    st.session_state.setdefault("chat", [])
+
+    for turn in st.session_state.chat:
+        with st.chat_message(turn["role"]):
+            st.write(turn["content"])
+            if turn["role"] == "assistant":
+                render_sources(turn.get("sources", []), turn.get("searched", True))
+
+    prompt = st.chat_input("질문을 입력하세요" if has_key else "API 키가 없어 대화를 쓸 수 없습니다")
+    if prompt:
+        with st.chat_message("user"):
+            st.write(prompt)
+        st.session_state.chat.append({"role": "user", "content": prompt})
+
+        # Only the plain turns go to the model; sources are UI-side state.
+        history = [
+            {"role": t["role"], "content": t["content"]}
+            for t in st.session_state.chat[:-1]
+        ]
+        retriever = build_retriever(
+            is_hybrid, resolved_device, candidate_k, rrf_k, expander_name
+        )
+        pipeline = RAGPipeline(
+            retriever=retriever,
+            llm=load_llm(),
+            gate=load_gate() if use_gate else None,
+        )
+        with st.chat_message("assistant"):
+            with st.spinner("생각 중…"):
+                response = pipeline.ask(prompt, top_k=top_k, history=history)
+            st.write(response.answer)
+            if response.searched:
+                show_expanded_queries(response.sources)
+            render_sources(response.sources, response.searched)
+
+        st.session_state.chat.append({
+            "role": "assistant",
+            "content": response.answer,
+            "sources": response.sources,
+            "searched": response.searched,
+        })
