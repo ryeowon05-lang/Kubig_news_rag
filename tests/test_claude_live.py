@@ -1,10 +1,11 @@
 """Optional live Claude API smoke test.
 
-Run explicitly with:
-    uv run pytest tests/test_claude_live.py -q -s
+Marked `live` and deselected by default (see `addopts` in pyproject.toml) so a
+plain `uv run pytest` never spends API credits. Run it deliberately:
 
-The test is skipped unless ANTHROPIC_API_KEY is set, so normal pytest runs do not
-spend API credits.
+    uv run pytest -m live -q -s
+
+It is additionally skipped when ANTHROPIC_API_KEY is unset.
 """
 
 import os
@@ -15,6 +16,7 @@ from generation.llm import ClaudeClient
 from generation.prompt import build_messages
 
 
+@pytest.mark.live
 @pytest.mark.skipif(not os.getenv("ANTHROPIC_API_KEY"), reason="ANTHROPIC_API_KEY is not set")
 def test_live_claude_generation():
     results = [

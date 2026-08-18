@@ -24,3 +24,8 @@ dev = [
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
+# Tests must not spend API credits. Anything that calls the real Claude API is
+# marked `live` and deselected by default; run it deliberately with
+#   uv run pytest -m live
+markers = ["live: calls the real Claude API and costs credits"]
+addopts = "-m 'not live'"
