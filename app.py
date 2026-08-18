@@ -100,7 +100,11 @@ def render_chunk(rank: int, chunk: dict) -> None:
             st.markdown(f"[원문 보기]({chunk['url']})")
 
 
-# --- sidebar --------------------------------------------------------------
+# --- page -----------------------------------------------------------------
+
+# Rendered before the sidebar so the page still has a heading when a later check
+# stops the script — a bare st.stop() with nothing drawn yet is a blank page.
+st.title("📰 한국 금융 뉴스 RAG")
 
 with st.sidebar:
     st.header("검색 설정")
@@ -128,21 +132,20 @@ with st.sidebar:
     resolved_device = detect_device() if device == "auto" else device
     st.caption(f"device: `{resolved_device}`")
 
-    if not DEFAULT_DB.is_dir():
-        st.error(
-            "Chroma 인덱스가 없습니다.\n\n"
-            "`uv run python indexing/chunk.py`\n\n"
-            "`uv run python indexing/build_index.py --rebuild --device mps`"
-        )
-        st.stop()
-
-# --- main -----------------------------------------------------------------
-
-st.title("📰 한국 금융 뉴스 RAG")
 st.caption(
     "네이버 금융 뉴스 432건 · 1,377청크 · BGE-M3 임베딩 + BM25 · "
     f"현재 모드: **{mode}**"
 )
+
+if not DEFAULT_DB.is_dir():
+    st.error(
+        f"Chroma 인덱스가 없습니다 (`{DEFAULT_DB}`). 먼저 인덱스를 만들어 주세요.\n\n"
+        "```\n"
+        "uv run python indexing/chunk.py\n"
+        "uv run python indexing/build_index.py --rebuild --device mps\n"
+        "```"
+    )
+    st.stop()
 
 question = st.text_input(
     "질문", placeholder="예: 삼전 반도체 실적 전망은?", label_visibility="collapsed"

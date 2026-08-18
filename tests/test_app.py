@@ -47,3 +47,17 @@ def test_no_question_runs_no_retrieval():
 
     assert not app.subheader
     assert not app.expander
+
+
+def test_missing_index_reports_the_problem_instead_of_rendering_nothing(monkeypatch, tmp_path):
+    # data/chroma is a gitignored build artifact, so a fresh clone has no index.
+    # Stopping before the title renders leaves a blank page and turns `pytest`
+    # red for anyone who has not built the index yet.
+    import indexing.build_index
+
+    monkeypatch.setattr(indexing.build_index, "DEFAULT_DB", tmp_path / "absent")
+    app = run_app()
+
+    assert not app.exception
+    assert app.title[0].value.endswith("한국 금융 뉴스 RAG")
+    assert any("build_index" in e.value for e in app.error)
