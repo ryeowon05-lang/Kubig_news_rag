@@ -19,6 +19,7 @@ import streamlit as st
 
 from indexing.build_index import DEFAULT_DB
 from rag import RAGPipeline
+from ui_format import meta_line, provenance_line, source_heading
 
 st.set_page_config(page_title="한국 금융 뉴스 RAG", page_icon="📰", layout="wide")
 
@@ -118,43 +119,20 @@ def show_expanded_queries(results: list[dict]) -> None:
 
 
 def render_chunk(rank: int, chunk: dict) -> None:
-    """One retrieved chunk, with where it came from."""
-    title = chunk.get("title") or "(제목 없음)"
-    with st.expander(f"**{rank}. {title}**", expanded=rank <= 2):
-        bits = []
-        if chunk.get("date"):
-            bits.append(chunk["date"])
-        if chunk.get("stock_names"):
-            bits.append("· ".join(chunk["stock_names"]))
-        if chunk.get("doc_type") == "broadcast":
-            bits.append("방송")
-        st.caption(" | ".join(bits))
+    """One source card: linked title, why it surfaced, and the passage."""
+    st.markdown(source_heading(rank, chunk))
 
-        provenance = []
-        if chunk.get("matched_queries") is not None:
-            hits = "".join(
-                f"q{i}" if i in chunk["matched_queries"] else "·"
-                for i in range(len(chunk.get("expanded_queries") or []))
-            )
-            provenance.append(f"질의 {hits}")
-        if chunk.get("rrf_score") is not None:
-            dense_rank = chunk.get("dense_rank")
-            bm25_rank = chunk.get("bm25_rank")
-            provenance.append(f"RRF {chunk['rrf_score']:.4f}")
-            provenance.append(f"dense #{dense_rank}" if dense_rank else "dense —")
-            provenance.append(f"bm25 #{bm25_rank}" if bm25_rank else "bm25 —")
-        if chunk.get("similarity") is not None:
-            provenance.append(f"유사도 {chunk['similarity']:.4f}")
-        if chunk.get("bm25_score") is not None:
-            provenance.append(f"BM25 {chunk['bm25_score']:.2f}")
-        if chunk.get("cited_as"):
-            provenance.append("인용 " + ", ".join(f"[뉴스{n}]" for n in chunk["cited_as"]))
-        if provenance:
-            st.caption(" · ".join(provenance))
+    meta = meta_line(chunk)
+    if meta:
+        st.caption(meta)
+    provenance = provenance_line(chunk)
+    if provenance:
+        st.caption(provenance)
 
-        st.write(chunk.get("content", ""))
-        if chunk.get("url"):
-            st.markdown(f"[원문 보기]({chunk['url']})")
+    content = chunk.get("content", "")
+    if content:
+        with st.expander("본문 보기", expanded=rank <= 2):
+            st.write(content)
 
 
 def render_sources(sources: list[dict], searched: bool) -> None:
