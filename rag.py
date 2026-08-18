@@ -85,6 +85,10 @@ class RAGPipeline:
             "dense_rank": result.get("dense_rank"),
             "bm25_rank": result.get("bm25_rank"),
             "bm25_score": result.get("bm25_score"),
+            # Query expansion: which phrasings were searched, and which of them
+            # surfaced this chunk. None when expansion is off.
+            "expanded_queries": result.get("expanded_queries"),
+            "matched_queries": result.get("matched_queries"),
         }
 
     @staticmethod

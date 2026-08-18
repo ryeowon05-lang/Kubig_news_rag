@@ -162,3 +162,13 @@ def test_dense_only_sources_omit_the_fusion_fields():
 
     assert source["rrf_score"] is None
     assert source["dense_rank"] is None
+
+
+def test_sources_carry_the_expanded_queries_that_found_them():
+    results = [{**RESULTS[0], "expanded_queries": ["원본", "가상 본문"], "matched_queries": [0, 1]}]
+    pipeline = RAGPipeline(retriever=FakeRetriever(results), llm=FakeLLM())
+
+    source = pipeline.ask("삼성전자 실적").sources[0]
+
+    assert source["expanded_queries"] == ["원본", "가상 본문"]
+    assert source["matched_queries"] == [0, 1]
