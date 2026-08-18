@@ -54,17 +54,27 @@ class ClaudeClient:
 
         self._client = Anthropic(api_key=key)
 
-    def generate(self, system_prompt: str, user_prompt: str) -> str:
-        """Generate one text answer from Claude."""
+    def generate(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        history: list[dict] | None = None,
+    ) -> str:
+        """Generate one text answer from Claude.
+
+        `history` is prior `{"role", "content"}` turns, sent ahead of the current
+        question so follow-ups ("그럼 SK하이닉스는?") have something to refer to.
+        """
         if not system_prompt.strip() or not user_prompt.strip():
             raise ValueError("system_prompt and user_prompt cannot be empty")
 
+        messages = [*(history or []), {"role": "user", "content": user_prompt}]
         try:
             response = self._client.messages.create(
                 model=self.model,
                 max_tokens=self.max_tokens,
                 system=system_prompt,
-                messages=[{"role": "user", "content": user_prompt}],
+                messages=messages,
             )
         except Exception as exc:
             raise LLMError(f"Claude API request failed: {exc}") from exc

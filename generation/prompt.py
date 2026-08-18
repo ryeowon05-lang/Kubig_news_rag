@@ -11,6 +11,18 @@ SYSTEM_PROMPT = """당신은 한국 금융 뉴스 기반 질의응답 시스템�
 - 답변에 근거가 된 뉴스 번호를 [뉴스1], [뉴스2]와 같은 형식으로 표시하세요.
 - 서로 다른 뉴스의 내용이 다르면 임의로 하나를 선택하지 말고 차이를 밝혀 주세요.
 - 투자 판단을 직접 지시하지 말고, 뉴스에서 확인되는 사실과 전망을 구분해서 설명하세요.
+- 뉴스 번호는 이번 턴에 제공된 자료에만 해당합니다. 이전 답변에서 쓴 번호와는 무관하니
+  이번 자료를 기준으로 다시 매기세요.
+"""
+
+CHAT_SYSTEM_PROMPT = """당신은 한국 금융 뉴스 기반 질의응답 시스템의 대화 담당입니다.
+
+이번 차례에는 뉴스 자료가 주어지지 않았습니다. 지금까지의 대화 내용만으로 답하세요.
+- 인사나 잡담에는 자연스럽게 응답하세요.
+- 직전 답변을 다시 설명하거나 요약해달라는 요청이면, 그 답변 내용만 가지고 처리하세요.
+- 대화에 없는 사실이나 수치를 지어내지 마세요. 추측해서 채우지도 마세요.
+- 답하려면 뉴스를 찾아봐야 하는 질문이라면, 자료 없이 답할 수 없다고 밝히고 질문을
+  구체적으로 다시 해달라고 요청하세요.
 """
 
 
@@ -60,3 +72,10 @@ URL: {result.get('url', '')}
 def build_messages(question: str, results: list[dict]) -> tuple[str, str]:
     """Return the system prompt and user prompt for the Claude Messages API."""
     return SYSTEM_PROMPT, build_user_prompt(question, results)
+
+
+def build_chat_messages(question: str) -> tuple[str, str]:
+    """Prompts for a turn that skipped retrieval — answered from the conversation."""
+    if not question.strip():
+        raise ValueError("question cannot be empty")
+    return CHAT_SYSTEM_PROMPT, question.strip()

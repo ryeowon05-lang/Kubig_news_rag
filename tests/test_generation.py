@@ -104,8 +104,8 @@ class FakeLLM:
         self.answer = answer
         self.calls = []
 
-    def generate(self, system_prompt, user_prompt):
-        self.calls.append((system_prompt, user_prompt))
+    def generate(self, system_prompt, user_prompt, history=None):
+        self.calls.append((system_prompt, user_prompt, history))
         return self.answer
 
 
@@ -172,3 +172,140 @@ def test_sources_carry_the_expanded_queries_that_found_them():
 
     assert source["expanded_queries"] == ["원본", "가상 본문"]
     assert source["matched_queries"] == [0, 1]
+
+
+# --- multi-turn -----------------------------------------------------------
+
+
+def test_claude_client_sends_prior_turns_before_the_current_question():
+    fake = FakeClient()
+    client = ClaudeClient(client=fake)
+    history = [
+        {"role": "user", "content": "삼성전자 실적은?"},
+        {"role": "assistant", "content": "개선 전망입니다 [뉴스1]"},
+    ]
+
+    client.generate("system", "그럼 SK하이닉스는?", history=history)
+
+    assert fake.messages.calls[0]["messages"] == [
+        {"role": "user", "content": "삼성전자 실적은?"},
+        {"role": "assistant", "content": "개선 전망입니다 [뉴스1]"},
+        {"role": "user", "content": "그럼 SK하이닉스는?"},
+    ]
+
+
+def test_claude_client_without_history_sends_a_single_turn():
+    fake = FakeClient()
+
+    ClaudeClient(client=fake).generate("system", "질문")
+
+    assert fake.messages.calls[0]["messages"] == [{"role": "user", "content": "질문"}]
+
+
+def test_chat_prompt_answers_from_the_conversation_without_news_material():
+    from generation.prompt import build_chat_messages
+
+    system, user = build_chat_messages("더 쉽게 설명해줘")
+
+    assert "뉴스 자료" not in user
+    assert user.strip() == "더 쉽게 설명해줘"
+    # No sources this turn, so the model must not invent facts to fill the gap.
+    assert "지어내" in system or "추측" in system
+
+
+def test_chat_prompt_rejects_a_blank_question():
+    from generation.prompt import build_chat_messages
+
+    with pytest.raises(ValueError):
+        build_chat_messages("   ")
+
+
+def test_grounded_prompt_warns_that_old_citation_numbers_do_not_carry_over():
+    # In a multi-turn chat the previous answer's [뉴스2] referred to a different
+    # set of chunks; the model must renumber against this turn's material.
+    system, _ = build_messages("질문", RESULTS)
+
+    assert "이전" in system
+
+
+# --- search gate ----------------------------------------------------------
+
+
+class FakeGate:
+    def __init__(self, decision=True):
+        self.decision = decision
+        self.calls = []
+
+    def needs_search(self, question, history=None):
+        self.calls.append((question, history))
+        return self.decision
+
+
+def test_a_turn_the_gate_sends_to_chat_never_touches_the_retriever():
+    retriever, llm = FakeRetriever(RESULTS), FakeLLM("천만에요")
+    pipeline = RAGPipeline(retriever=retriever, llm=llm, gate=FakeGate(False))
+
+    response = pipeline.ask("고마워")
+
+    assert retriever.calls == []
+    assert response.searched is False
+    assert response.sources == []
+    assert response.answer == "천만에요"
+
+
+def test_a_chat_turn_is_answered_without_news_material_in_the_prompt():
+    llm = FakeLLM("천만에요")
+    pipeline = RAGPipeline(retriever=FakeRetriever(RESULTS), llm=llm, gate=FakeGate(False))
+
+    pipeline.ask("고마워")
+
+    _, user_prompt, _ = llm.calls[0]
+    assert "[뉴스1]" not in user_prompt
+
+
+def test_a_turn_the_gate_sends_to_search_runs_retrieval():
+    retriever = FakeRetriever(RESULTS)
+    pipeline = RAGPipeline(retriever=retriever, llm=FakeLLM(), gate=FakeGate(True))
+
+    response = pipeline.ask("삼성전자 실적")
+
+    assert retriever.calls
+    assert response.searched is True
+    assert response.sources
+
+
+def test_without_a_gate_every_turn_still_searches():
+    retriever = FakeRetriever(RESULTS)
+    pipeline = RAGPipeline(retriever=retriever, llm=FakeLLM())
+
+    assert pipeline.ask("고마워").searched is True
+    assert retriever.calls
+
+
+def test_the_gate_sees_the_conversation_so_far():
+    gate = FakeGate(False)
+    history = [{"role": "user", "content": "삼성전자 실적은?"}]
+    pipeline = RAGPipeline(retriever=FakeRetriever(RESULTS), llm=FakeLLM(), gate=gate)
+
+    pipeline.ask("더 쉽게 설명해줘", history=history)
+
+    assert gate.calls == [("더 쉽게 설명해줘", history)]
+
+
+def test_prior_turns_are_passed_to_the_answering_model():
+    llm = FakeLLM()
+    history = [
+        {"role": "user", "content": "삼성전자 실적은?"},
+        {"role": "assistant", "content": "개선 전망입니다"},
+    ]
+    pipeline = RAGPipeline(retriever=FakeRetriever(RESULTS), llm=llm)
+
+    pipeline.ask("그럼 SK하이닉스는?", history=history)
+
+    assert llm.calls[0][2] == history
+
+
+def test_the_response_dict_reports_whether_the_turn_searched():
+    pipeline = RAGPipeline(retriever=FakeRetriever(RESULTS), llm=FakeLLM(), gate=FakeGate(False))
+
+    assert pipeline.ask("고마워").to_dict()["searched"] is False

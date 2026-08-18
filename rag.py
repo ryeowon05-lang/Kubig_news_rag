@@ -7,8 +7,9 @@ from dataclasses import dataclass
 from typing import Any
 
 from generation.llm import ClaudeClient
-from generation.prompt import build_messages
+from generation.prompt import build_chat_messages, build_messages
 from indexing.query_preprocess import normalize_query
+
 DEFAULT_TOP_K = 5
 
 
@@ -17,31 +18,57 @@ class RAGResponse:
     question: str
     answer: str
     sources: list[dict]
+    # False when the search gate routed this turn to the conversation instead of
+    # the news index, so the UI can say why there are no sources.
+    searched: bool = True
 
     def to_dict(self) -> dict:
         return {
             "question": self.question,
             "answer": self.answer,
             "sources": self.sources,
+            "searched": self.searched,
         }
 
 
 class RAGPipeline:
     """Question -> retrieval -> grounded Claude answer + retrieved sources."""
 
-    def __init__(self, retriever: Any | None = None, llm: Any | None = None) -> None:
+    def __init__(
+        self,
+        retriever: Any | None = None,
+        llm: Any | None = None,
+        gate: Any | None = None,
+    ) -> None:
         if retriever is None:
             from indexing.retriever import get_retriever
             retriever = get_retriever()
         self.retriever = retriever
         self.llm = llm or ClaudeClient()
+        # Optional. Without it every turn searches, which is the single-question
+        # behaviour; with it, small talk and follow-ups skip retrieval.
+        self.gate = gate
 
-    def ask(self, question: str, top_k: int = DEFAULT_TOP_K) -> RAGResponse:
+    def ask(
+        self,
+        question: str,
+        top_k: int = DEFAULT_TOP_K,
+        history: list[dict] | None = None,
+    ) -> RAGResponse:
         question = question.strip()
         if not question:
             raise ValueError("question cannot be empty")
         if top_k < 1:
             raise ValueError("top_k must be at least 1")
+
+        if self.gate is not None and not self.gate.needs_search(question, history):
+            system_prompt, user_prompt = build_chat_messages(question)
+            return RAGResponse(
+                question=question,
+                answer=self.llm.generate(system_prompt, user_prompt, history=history),
+                sources=[],
+                searched=False,
+            )
 
         question = normalize_query(question)
         results = self.retriever.retrieve(question, top_k=top_k)
@@ -56,7 +83,7 @@ class RAGPipeline:
         # Claude에게 전달한다. 답변 안의 인용 번호가 이 번호를 그대로 가리키므로,
         # 여기서 청크 순서나 개수를 바꾸면 인용과 출처가 어긋난다.
         system_prompt, user_prompt = build_messages(question, results)
-        answer = self.llm.generate(system_prompt, user_prompt)
+        answer = self.llm.generate(system_prompt, user_prompt, history=history)
 
         raw_sources = [
             self._source_from_result(rank, result)
