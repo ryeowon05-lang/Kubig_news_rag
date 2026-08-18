@@ -66,6 +66,44 @@ def load_llm():
     return ClaudeClient()
 
 
+EXPANDERS = {
+    "없음": None,
+    "Multi-Query": "multi_query",
+    "HyDE": "hyde",
+}
+
+
+def wrap_with_expansion(base, expander_name: str, candidate_k: int, rrf_k: int):
+    """Wrap the retriever so each question is searched under several phrasings."""
+    kind = EXPANDERS[expander_name]
+    if kind is None:
+        return base
+    from indexing.expanding import ExpandingRetriever
+    from indexing.query_expand import get_expander
+
+    expander = get_expander(kind, llm=load_llm())
+    if expander is None:
+        return base
+    return ExpandingRetriever(
+        base=base, expander=expander, candidate_k=candidate_k, rrf_k=rrf_k
+    )
+
+
+def show_expanded_queries(results: list[dict]) -> None:
+    """Show what the expander actually searched with."""
+    queries = next((r.get("expanded_queries") for r in results if r.get("expanded_queries")), None)
+    if not queries:
+        return
+    with st.expander(f"실제 검색에 쓴 질의 {len(queries)}개", expanded=False):
+        for i, query in enumerate(queries):
+            label = "원본" if i == 0 else f"q{i}"
+            st.markdown(f"**{label}** · {query}")
+        st.caption(
+            "q1 이후는 LLM이 생성한 것입니다. HyDE의 가상 본문은 검색에만 쓰이고 "
+            "답변 근거로는 들어가지 않습니다."
+        )
+
+
 def render_chunk(rank: int, chunk: dict) -> None:
     """One retrieved chunk, with where it came from."""
     title = chunk.get("title") or "(제목 없음)"
@@ -80,6 +118,12 @@ def render_chunk(rank: int, chunk: dict) -> None:
         st.caption(" | ".join(bits))
 
         provenance = []
+        if chunk.get("matched_queries") is not None:
+            hits = "".join(
+                f"q{i}" if i in chunk["matched_queries"] else "·"
+                for i in range(len(chunk.get("expanded_queries") or []))
+            )
+            provenance.append(f"질의 {hits}")
         if chunk.get("rrf_score") is not None:
             dense_rank = chunk.get("dense_rank")
             bm25_rank = chunk.get("bm25_rank")
@@ -117,6 +161,21 @@ with st.sidebar:
 
     st.divider()
     has_key = bool(os.getenv("ANTHROPIC_API_KEY"))
+    expander_name = st.radio(
+        "질의 확장",
+        list(EXPANDERS),
+        index=0,
+        disabled=not has_key,
+        help=(
+            "Multi-Query: 질문을 여러 표현으로 바꿔 각각 검색.\n\n"
+            "HyDE: 답이 될 법한 가상 기사 본문을 지어내 그것으로 검색.\n\n"
+            "둘 다 질문당 LLM 호출이 1회 더 듭니다."
+        ),
+    )
+    if not has_key:
+        expander_name = "없음"
+
+    st.divider()
     retrieval_only = st.checkbox(
         "검색만 (LLM 호출 안 함)",
         value=not has_key,
@@ -134,7 +193,7 @@ with st.sidebar:
 
 st.caption(
     "네이버 금융 뉴스 432건 · 1,377청크 · BGE-M3 임베딩 + BM25 · "
-    f"현재 모드: **{mode}**"
+    f"현재 모드: **{mode}** · 질의 확장: **{expander_name}**"
 )
 
 if not DEFAULT_DB.is_dir():
@@ -152,15 +211,17 @@ question = st.text_input(
 )
 
 if question:
-    retriever = (
+    base = (
         load_hybrid(resolved_device, candidate_k, rrf_k)
         if is_hybrid
         else load_dense(resolved_device)
     )
+    retriever = wrap_with_expansion(base, expander_name, candidate_k, rrf_k)
 
     if retrieval_only:
         with st.spinner("검색 중…"):
             chunks = retriever.retrieve(question, top_k=top_k)
+        show_expanded_queries(chunks)
         st.subheader(f"검색 결과 {len(chunks)}개")
         if not chunks:
             st.info("검색 결과가 없습니다.")
@@ -171,6 +232,7 @@ if question:
             response = RAGPipeline(retriever=retriever, llm=load_llm()).ask(
                 question, top_k=top_k
             )
+        show_expanded_queries(response.sources)
         st.subheader("답변")
         st.write(response.answer)
         st.subheader(f"출처 {len(response.sources)}건")
