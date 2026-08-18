@@ -33,7 +33,7 @@ export ANTHROPIC_API_KEY="YOUR_KEY"
 Optionally set the model:
 
 ```powershell
-$env:CLAUDE_MODEL="claude-sonnet-4-6"
+$env:CLAUDE_MODEL="claude-sonnet-5"
 ```
 
 ## Run the end-to-end pipeline

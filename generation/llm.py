@@ -8,7 +8,7 @@ from typing import Any
 from dotenv import load_dotenv
 load_dotenv()
 
-DEFAULT_MODEL = "claude-sonnet-4-6"
+DEFAULT_MODEL = "claude-sonnet-5"
 DEFAULT_MAX_TOKENS = 1024
 
 
