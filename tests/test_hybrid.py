@@ -180,3 +180,40 @@ def test_hybrid_drops_into_the_rag_pipeline_unchanged():
 
     assert response.answer == "답변 [뉴스1]"
     assert response.sources[0]["url"] == "https://example.com/a"
+
+
+# --- N-way fusion ---------------------------------------------------------
+
+
+def test_fusing_many_lists_sums_one_term_per_list_the_chunk_appears_in():
+    from indexing.hybrid import rrf_fuse_many
+
+    fused = rrf_fuse_many(
+        [("q0", [hit("a")]), ("q1", [hit("a")]), ("q2", [hit("a")])]
+    )
+
+    assert fused[0]["rrf_score"] == pytest.approx(3 / (DEFAULT_RRF_K + 1))
+
+
+def test_fusing_many_lists_records_a_rank_per_label():
+    from indexing.hybrid import rrf_fuse_many
+
+    fused = rrf_fuse_many([("q0", [hit("x"), hit("a")]), ("q1", [hit("a")])])
+    by_id = {f["chunk_id"]: f for f in fused}
+
+    assert by_id["a"]["q0_rank"] == 2 and by_id["a"]["q1_rank"] == 1
+    assert by_id["x"]["q0_rank"] == 1 and by_id["x"]["q1_rank"] is None
+
+
+def test_fusing_many_lists_keeps_fields_the_inner_retriever_already_set():
+    from indexing.hybrid import rrf_fuse_many
+
+    # Chunks coming out of HybridRetriever already carry dense_rank/bm25_rank.
+    # A second fusion pass on top must not blank them out.
+    inner = hit("a", similarity=0.7, bm25_score=3.0, dense_rank=2, bm25_rank=1)
+
+    fused = rrf_fuse_many([("q0", [inner])])
+
+    assert fused[0]["dense_rank"] == 2
+    assert fused[0]["bm25_rank"] == 1
+    assert fused[0]["similarity"] == 0.7

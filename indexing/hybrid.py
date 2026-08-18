@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import warnings
 from pathlib import Path
+from collections.abc import Sequence
 from typing import Any, Protocol
 
 from indexing.build_index import DEFAULT_COLLECTION, DEFAULT_DB, DEFAULT_INPUT, DEFAULT_MODEL
@@ -32,45 +33,52 @@ class Retriever(Protocol):
     def retrieve(self, question: str, top_k: int = ...) -> list[dict]: ...
 
 
-def rrf_fuse(
-    dense_hits: list[dict],
-    bm25_hits: list[dict],
+def rrf_fuse_many(
+    rankings: Sequence[tuple[str, list[dict]]],
     k: int = DEFAULT_RRF_K,
 ) -> list[dict]:
-    """Fuse two ranked chunk lists into one, ordered by descending RRF score."""
+    """Fuse any number of ranked chunk lists, ordered by descending RRF score.
+
+    Each fused chunk gets `rrf_score` plus a `{label}_rank` for every list, set
+    to None where the chunk is absent. Only those keys are initialised, so
+    fields an inner fusion already wrote — `dense_rank` on hits coming out of
+    `HybridRetriever`, for instance — survive a second pass on top.
+    """
+    labels = [label for label, _ in rankings]
     fused: dict[Any, dict] = {}
     order: list[Any] = []
 
-    for source, hits in (("dense", dense_hits), ("bm25", bm25_hits)):
+    for label, hits in rankings:
         for rank, hit in enumerate(hits, 1):
             key = hit["chunk_id"]
             if key not in fused:
-                fused[key] = {
-                    **hit,
-                    "rrf_score": 0.0,
-                    "dense_rank": None,
-                    "bm25_rank": None,
-                }
+                fused[key] = {**hit, "rrf_score": 0.0}
+                for other in labels:
+                    fused[key].setdefault(f"{other}_rank", None)
                 order.append(key)
             else:
-                # Same chunk from the other retriever: keep the metadata already
-                # there and add whichever score fields this side contributes.
+                # Same chunk from another list: keep what is already there and
+                # take whichever score fields this one contributes.
                 for field, value in hit.items():
-                    fused[key].setdefault(field, value)
+                    if fused[key].get(field) is None:
+                        fused[key][field] = value
             fused[key]["rrf_score"] += 1.0 / (k + rank)
-            fused[key][f"{source}_rank"] = rank
-            if source == "bm25" and "bm25_score" in hit:
-                fused[key]["bm25_score"] = hit["bm25_score"]
-            if source == "dense":
-                for field in ("similarity", "distance"):
-                    if field in hit:
-                        fused[key][field] = hit[field]
+            fused[key][f"{label}_rank"] = rank
 
     return sorted(
         (fused[key] for key in order),
         key=lambda item: item["rrf_score"],
         reverse=True,
     )
+
+
+def rrf_fuse(
+    dense_hits: list[dict],
+    bm25_hits: list[dict],
+    k: int = DEFAULT_RRF_K,
+) -> list[dict]:
+    """Fuse the dense and BM25 result lists into one."""
+    return rrf_fuse_many([("dense", dense_hits), ("bm25", bm25_hits)], k=k)
 
 
 class HybridRetriever:
