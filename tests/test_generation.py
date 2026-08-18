@@ -135,3 +135,30 @@ def test_rag_pipeline_returns_no_answer_when_retrieval_is_empty():
     assert response.answer == "제공된 자료에서 확인할 수 없습니다."
     assert response.sources == []
     assert llm.calls == []
+
+
+def test_sources_carry_the_chunk_text_and_its_retrieval_provenance():
+    # The UI shows each source card with the passage the answer was grounded in
+    # and why that chunk surfaced, so the citation payload has to carry both.
+    results = [
+        {**RESULTS[0], "rrf_score": 0.032, "dense_rank": 2, "bm25_rank": 1, "bm25_score": 7.5}
+    ]
+    pipeline = RAGPipeline(retriever=FakeRetriever(results), llm=FakeLLM())
+
+    source = pipeline.ask("삼성전자 실적").sources[0]
+
+    assert source["content"] == RESULTS[0]["content"]
+    assert source["similarity"] == RESULTS[0]["similarity"]
+    assert source["rrf_score"] == 0.032
+    assert source["dense_rank"] == 2
+    assert source["bm25_rank"] == 1
+    assert source["bm25_score"] == 7.5
+
+
+def test_dense_only_sources_omit_the_fusion_fields():
+    pipeline = RAGPipeline(retriever=FakeRetriever(RESULTS), llm=FakeLLM())
+
+    source = pipeline.ask("삼성전자 실적").sources[0]
+
+    assert source["rrf_score"] is None
+    assert source["dense_rank"] is None

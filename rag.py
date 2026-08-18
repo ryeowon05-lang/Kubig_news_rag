@@ -76,6 +76,15 @@ class RAGPipeline:
             "url": result.get("url", ""),
             "stock_names": result.get("stock_names", []),
             "similarity": result.get("similarity"),
+            # The UI shows the passage the answer was grounded in, and — for
+            # hybrid retrieval — which retriever surfaced it. Absent on
+            # dense-only results, so these stay None rather than missing.
+            "content": result.get("content", ""),
+            "doc_type": result.get("doc_type"),
+            "rrf_score": result.get("rrf_score"),
+            "dense_rank": result.get("dense_rank"),
+            "bm25_rank": result.get("bm25_rank"),
+            "bm25_score": result.get("bm25_score"),
         }
 
     @staticmethod
