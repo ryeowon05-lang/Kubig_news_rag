@@ -108,6 +108,11 @@ class FakeLLM:
         self.calls.append((system_prompt, user_prompt, history))
         return self.answer
 
+    def stream(self, system_prompt, user_prompt, history=None):
+        self.calls.append((system_prompt, user_prompt, history))
+        for word in self.answer.split(" "):
+            yield word + " "
+
 
 def test_rag_pipeline_connects_retrieval_prompt_and_generation():
     retriever = FakeRetriever(RESULTS)
@@ -309,3 +314,140 @@ def test_the_response_dict_reports_whether_the_turn_searched():
     pipeline = RAGPipeline(retriever=FakeRetriever(RESULTS), llm=FakeLLM(), gate=FakeGate(False))
 
     assert pipeline.ask("고마워").to_dict()["searched"] is False
+
+
+# --- streaming ------------------------------------------------------------
+
+
+class FakeStreamContext:
+    def __init__(self, parts):
+        self.parts = parts
+        self.closed = False
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        self.closed = True
+        return False
+
+    @property
+    def text_stream(self):
+        yield from self.parts
+
+
+class FakeStreamingMessages:
+    def __init__(self, parts):
+        self.parts = parts
+        self.calls = []
+        self.context = None
+
+    def stream(self, **kwargs):
+        self.calls.append(kwargs)
+        self.context = FakeStreamContext(self.parts)
+        return self.context
+
+
+class FakeStreamingClient:
+    def __init__(self, parts):
+        self.messages = FakeStreamingMessages(parts)
+
+
+def test_streaming_yields_the_answer_in_pieces():
+    fake = FakeStreamingClient(["삼성전자는 ", "반도체 실적이 ", "개선될 전망입니다 [뉴스1]"])
+    client = ClaudeClient(client=fake)
+
+    assert list(client.stream("system", "질문")) == [
+        "삼성전자는 ",
+        "반도체 실적이 ",
+        "개선될 전망입니다 [뉴스1]",
+    ]
+
+
+def test_streaming_sends_the_same_request_shape_as_a_plain_call():
+    fake = FakeStreamingClient(["답변"])
+    history = [{"role": "user", "content": "이전 질문"}]
+
+    list(ClaudeClient(client=fake, model="test-model").stream("system", "질문", history=history))
+
+    call = fake.messages.calls[0]
+    assert call["model"] == "test-model"
+    assert call["system"] == "system"
+    assert call["messages"] == [
+        {"role": "user", "content": "이전 질문"},
+        {"role": "user", "content": "질문"},
+    ]
+
+
+def test_the_stream_is_closed_once_it_is_consumed():
+    fake = FakeStreamingClient(["답변"])
+
+    list(ClaudeClient(client=fake).stream("system", "질문"))
+
+    assert fake.messages.context.closed is True
+
+
+def test_a_stream_that_produced_nothing_is_an_error():
+    fake = FakeStreamingClient([])
+
+    with pytest.raises(LLMError, match="empty"):
+        list(ClaudeClient(client=fake).stream("system", "질문"))
+
+
+def test_streaming_rejects_empty_prompts():
+    with pytest.raises(ValueError):
+        list(ClaudeClient(client=FakeStreamingClient(["x"])).stream("", "질문"))
+
+
+def test_streaming_ask_exposes_sources_before_the_answer_is_written():
+    # Retrieval finishes first, so the UI can show what it is about to cite while
+    # the text is still arriving.
+    pipeline = RAGPipeline(retriever=FakeRetriever(RESULTS), llm=FakeLLM())
+
+    response = pipeline.ask_stream("삼성전자 실적")
+
+    assert response.sources[0]["title"] == RESULTS[0]["title"]
+    assert response.searched is True
+
+
+def test_streaming_ask_yields_the_answer_in_pieces():
+    pipeline = RAGPipeline(retriever=FakeRetriever(RESULTS), llm=FakeLLM("가 나 다"))
+
+    pieces = list(pipeline.ask_stream("삼성전자 실적").stream)
+
+    assert len(pieces) > 1
+    assert "".join(pieces).strip() == "가 나 다"
+
+
+def test_a_gated_chat_turn_streams_without_retrieving():
+    retriever = FakeRetriever(RESULTS)
+    pipeline = RAGPipeline(retriever=retriever, llm=FakeLLM("천만에요"), gate=FakeGate(False))
+
+    response = pipeline.ask_stream("고마워")
+    text = "".join(response.stream)
+
+    assert retriever.calls == []
+    assert response.searched is False
+    assert response.sources == []
+    assert text.strip() == "천만에요"
+
+
+def test_streaming_ask_passes_prior_turns_to_the_model():
+    llm = FakeLLM()
+    history = [{"role": "user", "content": "이전 질문"}]
+    pipeline = RAGPipeline(retriever=FakeRetriever(RESULTS), llm=llm)
+
+    list(pipeline.ask_stream("후속 질문", history=history).stream)
+
+    assert llm.calls[0][2] == history
+
+
+def test_streaming_ask_reports_an_empty_index_without_calling_the_model():
+    llm = FakeLLM()
+    pipeline = RAGPipeline(retriever=FakeRetriever([]), llm=llm)
+
+    response = pipeline.ask_stream("삼성전자 실적")
+    text = "".join(response.stream)
+
+    assert text == "제공된 자료에서 확인할 수 없습니다."
+    assert llm.calls == []

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Iterator
 from typing import Any
 
 from dotenv import load_dotenv
@@ -88,3 +89,38 @@ class ClaudeClient:
         if not answer:
             raise LLMError("Claude returned an empty text response")
         return answer
+
+    def stream(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        history: list[dict] | None = None,
+    ) -> Iterator[str]:
+        """Yield the answer in pieces as Claude writes it.
+
+        Same request as `generate`; the difference is that the caller can render
+        text while it arrives instead of waiting out the whole completion.
+        """
+        if not system_prompt.strip() or not user_prompt.strip():
+            raise ValueError("system_prompt and user_prompt cannot be empty")
+
+        messages = [*(history or []), {"role": "user", "content": user_prompt}]
+        produced = False
+        try:
+            with self._client.messages.stream(
+                model=self.model,
+                max_tokens=self.max_tokens,
+                system=system_prompt,
+                messages=messages,
+            ) as stream:
+                for piece in stream.text_stream:
+                    if piece:
+                        produced = True
+                        yield piece
+        except LLMError:
+            raise
+        except Exception as exc:
+            raise LLMError(f"Claude API request failed: {exc}") from exc
+
+        if not produced:
+            raise LLMError("Claude returned an empty text response")

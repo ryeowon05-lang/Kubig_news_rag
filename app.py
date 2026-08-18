@@ -7,8 +7,8 @@ Two UI modes over the same pipeline:
 - **대화** — a chat that keeps its history, so follow-ups work. An optional LLM
   gate decides per turn whether the news index is needed at all.
 
-Retrieval-only skips the Claude call; use it while tuning retrieval, since every
-answer costs API credits.
+Answers stream as they are written. Retrieval-only skips the Claude call; use it
+while tuning retrieval, since every answer costs API credits.
 """
 
 from __future__ import annotations
@@ -276,13 +276,13 @@ if not is_chat:
             for rank, chunk in enumerate(chunks, 1):
                 render_chunk(rank, chunk)
         else:
-            with st.spinner("검색하고 답변 생성 중…"):
-                response = RAGPipeline(retriever=retriever, llm=load_llm()).ask(
+            with st.spinner("검색 중…"):
+                response = RAGPipeline(retriever=retriever, llm=load_llm()).ask_stream(
                     question, top_k=top_k
                 )
             show_expanded_queries(response.sources)
             st.subheader("답변")
-            st.write(response.answer)
+            st.write_stream(response.stream)
             st.subheader(f"출처 {len(response.sources)}건")
             if not response.sources:
                 st.info("관련 뉴스를 찾지 못했습니다.")
@@ -320,15 +320,17 @@ else:
         )
         with st.chat_message("assistant"):
             with st.spinner("생각 중…"):
-                response = pipeline.ask(prompt, top_k=top_k, history=history)
-            st.write(response.answer)
+                response = pipeline.ask_stream(prompt, top_k=top_k, history=history)
             if response.searched:
                 show_expanded_queries(response.sources)
+            # write_stream renders as the text arrives and returns the whole thing,
+            # which is what goes into the transcript.
+            answer = st.write_stream(response.stream)
             render_sources(response.sources, response.searched)
 
         st.session_state.chat.append({
             "role": "assistant",
-            "content": response.answer,
+            "content": answer,
             "sources": response.sources,
             "searched": response.searched,
         })

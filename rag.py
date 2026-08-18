@@ -3,7 +3,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from collections.abc import Iterator
+from dataclasses import dataclass, field
 from typing import Any
 
 from generation.llm import ClaudeClient
@@ -29,6 +30,23 @@ class RAGResponse:
             "sources": self.sources,
             "searched": self.searched,
         }
+
+
+NO_CONTEXT_ANSWER = "제공된 자료에서 확인할 수 없습니다."
+
+
+@dataclass(frozen=True)
+class StreamingRAGResponse:
+    """Sources up front, answer text as it is written.
+
+    Retrieval has already finished by the time this is returned, so a UI can show
+    what the answer will cite while the text is still arriving.
+    """
+
+    question: str
+    sources: list[dict]
+    searched: bool
+    stream: Iterator[str] = field(repr=False)
 
 
 class RAGPipeline:
@@ -75,7 +93,7 @@ class RAGPipeline:
         if not results:
             return RAGResponse(
                 question=question,
-                answer="제공된 자료에서 확인할 수 없습니다.",
+                answer=NO_CONTEXT_ANSWER,
                 sources=[],
             )
 
@@ -92,6 +110,49 @@ class RAGPipeline:
         sources = self._dedupe_sources_by_article(raw_sources)
 
         return RAGResponse(question=question, answer=answer, sources=sources)
+
+    def ask_stream(
+        self,
+        question: str,
+        top_k: int = DEFAULT_TOP_K,
+        history: list[dict] | None = None,
+    ) -> StreamingRAGResponse:
+        """Same as `ask`, but the answer text arrives incrementally."""
+        question = question.strip()
+        if not question:
+            raise ValueError("question cannot be empty")
+        if top_k < 1:
+            raise ValueError("top_k must be at least 1")
+
+        if self.gate is not None and not self.gate.needs_search(question, history):
+            system_prompt, user_prompt = build_chat_messages(question)
+            return StreamingRAGResponse(
+                question=question,
+                sources=[],
+                searched=False,
+                stream=self.llm.stream(system_prompt, user_prompt, history=history),
+            )
+
+        question = normalize_query(question)
+        results = self.retriever.retrieve(question, top_k=top_k)
+        if not results:
+            return StreamingRAGResponse(
+                question=question,
+                sources=[],
+                searched=True,
+                stream=iter([NO_CONTEXT_ANSWER]),
+            )
+
+        system_prompt, user_prompt = build_messages(question, results)
+        sources = self._dedupe_sources_by_article(
+            [self._source_from_result(rank, r) for rank, r in enumerate(results, 1)]
+        )
+        return StreamingRAGResponse(
+            question=question,
+            sources=sources,
+            searched=True,
+            stream=self.llm.stream(system_prompt, user_prompt, history=history),
+        )
 
     @staticmethod
     def _source_from_result(rank: int, result: dict) -> dict:
