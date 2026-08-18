@@ -173,7 +173,7 @@ def test_hybrid_drops_into_the_rag_pipeline_unchanged():
     retriever = HybridRetriever(dense=FakeRetriever(hits), bm25=FakeBM25(hits))
 
     class FakeLLM:
-        def generate(self, system_prompt, user_prompt):
+        def generate(self, system_prompt, user_prompt, history=None):
             return "답변 [뉴스1]"
 
     response = RAGPipeline(retriever=retriever, llm=FakeLLM()).ask("반도체 전망")

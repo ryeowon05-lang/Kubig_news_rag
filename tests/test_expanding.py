@@ -116,7 +116,7 @@ def test_the_hypothetical_passage_never_reaches_the_answer_prompt():
         def __init__(self):
             self.prompts = []
 
-        def generate(self, system_prompt, user_prompt):
+        def generate(self, system_prompt, user_prompt, history=None):
             self.prompts.append(user_prompt)
             return "답변 [뉴스1]"
 
@@ -132,7 +132,7 @@ def test_expanding_retriever_drops_into_the_rag_pipeline_unchanged():
     retriever = ExpandingRetriever(base=base, expander=FakeExpander(["원본"]))
 
     class FakeLLM:
-        def generate(self, system_prompt, user_prompt):
+        def generate(self, system_prompt, user_prompt, history=None):
             return "답변 [뉴스1]"
 
     response = RAGPipeline(retriever=retriever, llm=FakeLLM()).ask("원본 질문")
