@@ -80,3 +80,21 @@ def get_retriever(
     if key not in _RETRIEVERS:
         _RETRIEVERS[key] = DenseRetriever(db_path, collection_name, model_name, device)
     return _RETRIEVERS[key]
+
+
+def choose_device(has_cuda: bool, has_mps: bool) -> str:
+    """Pick the fastest device the machine actually offers."""
+    if has_cuda:
+        return "cuda"
+    if has_mps:
+        return "mps"
+    return "cpu"
+
+
+def detect_device() -> str:
+    """`choose_device` against the installed torch, or CPU if there is none."""
+    try:
+        import torch
+    except ImportError:
+        return "cpu"
+    return choose_device(torch.cuda.is_available(), torch.backends.mps.is_available())

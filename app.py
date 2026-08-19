@@ -18,22 +18,13 @@ import os
 import streamlit as st
 
 from indexing.build_index import DEFAULT_DB
+from indexing.retriever import detect_device
 from rag import RAGPipeline
 from ui_format import meta_line, provenance_line, source_heading
 
 st.set_page_config(page_title="한국 금융 뉴스 RAG", page_icon="📰", layout="wide")
 
 
-def detect_device() -> str:
-    try:
-        import torch
-    except ImportError:
-        return "cpu"
-    if torch.cuda.is_available():
-        return "cuda"
-    if torch.backends.mps.is_available():
-        return "mps"
-    return "cpu"
 
 
 @st.cache_resource(show_spinner="BGE-M3 로딩 중… (최초 1회, 10초쯤 걸립니다)")

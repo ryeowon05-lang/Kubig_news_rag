@@ -96,3 +96,27 @@ def test_get_retriever_reuses_one_instance_per_configuration(tmp_path):
 
     assert first is second
     assert first is not other
+
+
+def test_a_cuda_machine_uses_the_gpu():
+    from indexing.retriever import choose_device
+
+    assert choose_device(has_cuda=True, has_mps=False) == "cuda"
+
+
+def test_apple_silicon_falls_back_to_mps():
+    from indexing.retriever import choose_device
+
+    assert choose_device(has_cuda=False, has_mps=True) == "mps"
+
+
+def test_a_machine_with_no_accelerator_uses_the_cpu():
+    from indexing.retriever import choose_device
+
+    assert choose_device(has_cuda=False, has_mps=False) == "cpu"
+
+
+def test_cuda_wins_when_both_are_somehow_available():
+    from indexing.retriever import choose_device
+
+    assert choose_device(has_cuda=True, has_mps=True) == "cuda"
