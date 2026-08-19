@@ -248,8 +248,9 @@ uv run python cli.py "환율 전망" --json                           # 기계 �
 
 | 플래그 | 값 | 뜻 |
 | --- | --- | --- |
-| `--mode` | `dense` / `bm25` / `hybrid` (기본) | 검색 방식 |
-| `--expand` | `none` (기본) / `multi_query` / `hyde` | 질의 확장 |
+| `--compare` | 조합 목록 | 비교할 조합을 직접 지정 (`--mode`/`--expand`보다 우선) |
+| `--mode` | `dense` / `bm25` / `hybrid` (기본) | 검색 방식, 쉼표로 여러 개 |
+| `--expand` | `none` (기본) / `multi_query` / `hyde` | 질의 확장, 쉼표로 여러 개 |
 | `--gate` | 플래그 | 검색이 필요한 질문인지 LLM이 판단 |
 | `--chat` | 플래그 | 이력을 기억하는 대화 모드 (`exit`으로 종료) |
 | `--retrieval-only` | 플래그 | Claude를 호출하지 않음 — **API 키 없이 동작** |
@@ -263,6 +264,40 @@ uv run python cli.py "환율 전망" --json                           # 기계 �
 
 리트리버를 튜닝할 때는 `--retrieval-only`를 쓰세요. 답변 생성은 질문마다 Claude API
 비용이 듭니다.
+
+#### 여러 기법 한 번에 비교
+
+`--compare`에 조합을 직접 나열하면 한 질문을 각 조합으로 돌려 나란히 보여줍니다.
+조합 이름은 표에 찍히는 이름과 같은 표기(`hybrid`, `dense+hyde`)를 씁니다.
+
+```bash
+uv run python cli.py "HBM 수요 전망" \
+  --compare dense,hybrid,dense+hyde,dense+multi_query --retrieval-only
+```
+
+```
+변형별 순위 (· = 그 변형은 못 찾음)
+dense  hybrid  dense+hyde  dense+multi_query  기사
+    1       2           1                  2  [칩톡]"살 빼야 출하된다"…AI 공룡들…
+    2       1           3                  1  삼전·하닉은 월가 'ATM'이었다?...
+    ·       4           5                  5  엔비디아, HBM 공급부족 대응…
+    ·       5           ·                  4  메모리 품귀에…엔비디아 HBM4E 용량 축소 검토
+```
+
+숫자는 그 조합에서의 순위, `·`는 그 조합이 못 찾았다는 뜻입니다. 모든 조합이
+찾은 기사가 위로 올라오므로, 아래쪽 `·`가 섞인 줄이 기법 간 차이가 나는 지점입니다.
+
+`--mode`/`--expand`에 쉼표 목록을 주면 모든 짝을 훑습니다 — 조합을 일일이
+적기보다 전수 비교를 하고 싶을 때 씁니다.
+
+```bash
+uv run python cli.py "HBM 수요 전망" --mode dense,bm25,hybrid --retrieval-only
+uv run python cli.py "HBM 수요 전망" --mode hybrid --expand none,multi_query,hyde
+```
+
+무거운 모델은 조합 사이에 공유되므로 BGE-M3는 몇 개를 비교하든 한 번만 올라옵니다.
+`--json`을 붙이면 `runs` 배열에 조합별 결과가 담겨 나옵니다. 대화 모드(`--chat`)는
+조합 하나만 받습니다 — 답이 여러 개면 어느 답을 이력에 남길지 정할 수 없기 때문입니다.
 
 ### Streamlit UI
 

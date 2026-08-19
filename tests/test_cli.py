@@ -53,6 +53,12 @@ class FakeLoaders:
         return self.claude
 
 
+def variant_of(argv):
+    """(variant, args) for the single configuration these flags describe."""
+    parsed = cli.parse_args(argv)
+    return parsed.variants[0], parsed
+
+
 # --- 인자 파싱 -------------------------------------------------------------
 
 
@@ -95,7 +101,7 @@ def test_a_question_is_required_outside_chat_mode():
 def test_dense_mode_searches_with_embeddings_only():
     loaders = FakeLoaders()
 
-    retriever = cli.build_retriever(cli.parse_args(["q", "--mode", "dense"]), loaders)
+    retriever = cli.build_retriever(*variant_of(["q", "--mode", "dense"]), loaders)
 
     assert retriever is loaders.dense_retriever
 
@@ -103,7 +109,7 @@ def test_dense_mode_searches_with_embeddings_only():
 def test_bm25_mode_searches_with_tokens_only():
     loaders = FakeLoaders()
 
-    retriever = cli.build_retriever(cli.parse_args(["q", "--mode", "bm25"]), loaders)
+    retriever = cli.build_retriever(*variant_of(["q", "--mode", "bm25"]), loaders)
 
     assert retriever is loaders.bm25_retriever
 
@@ -111,7 +117,7 @@ def test_bm25_mode_searches_with_tokens_only():
 def test_hybrid_mode_fuses_both_retrievers():
     loaders = FakeLoaders()
 
-    retriever = cli.build_retriever(cli.parse_args(["q", "--mode", "hybrid"]), loaders)
+    retriever = cli.build_retriever(*variant_of(["q", "--mode", "hybrid"]), loaders)
 
     assert isinstance(retriever, HybridRetriever)
     assert retriever._dense is loaders.dense_retriever
@@ -122,7 +128,7 @@ def test_expansion_wraps_whatever_retriever_was_chosen():
     loaders = FakeLoaders()
 
     retriever = cli.build_retriever(
-        cli.parse_args(["q", "--mode", "dense", "--expand", "hyde"]), loaders
+        *variant_of(["q", "--mode", "dense", "--expand", "hyde"]), loaders
     )
 
     assert isinstance(retriever, ExpandingRetriever)
@@ -132,7 +138,7 @@ def test_expansion_wraps_whatever_retriever_was_chosen():
 def test_no_expansion_leaves_the_retriever_unwrapped():
     loaders = FakeLoaders()
 
-    retriever = cli.build_retriever(cli.parse_args(["q", "--expand", "none"]), loaders)
+    retriever = cli.build_retriever(*variant_of(["q", "--expand", "none"]), loaders)
 
     assert not isinstance(retriever, ExpandingRetriever)
 
@@ -141,7 +147,7 @@ def test_rrf_settings_reach_the_hybrid_retriever():
     loaders = FakeLoaders()
 
     retriever = cli.build_retriever(
-        cli.parse_args(["q", "--candidate-k", "30", "--rrf-k", "10"]), loaders
+        *variant_of(["q", "--candidate-k", "30", "--rrf-k", "10"]), loaders
     )
 
     assert retriever.candidate_k == 30
@@ -152,13 +158,13 @@ def test_rrf_settings_reach_the_hybrid_retriever():
 
 
 def test_the_gate_is_off_unless_asked_for():
-    pipeline = cli.build_pipeline(cli.parse_args(["q"]), FakeLoaders())
+    pipeline = cli.build_pipeline(*variant_of(["q"]), FakeLoaders())
 
     assert pipeline.gate is None
 
 
 def test_the_gate_flag_lets_small_talk_skip_retrieval():
-    pipeline = cli.build_pipeline(cli.parse_args(["q", "--gate"]), FakeLoaders())
+    pipeline = cli.build_pipeline(*variant_of(["q", "--gate"]), FakeLoaders())
 
     assert pipeline.gate is not None
 
@@ -213,9 +219,9 @@ def test_json_output_is_machine_readable(capsys):
 
     cli.main(["질문", "--mode", "dense", "--json"], loaders=loaders)
 
-    payload = json.loads(capsys.readouterr().out)
-    assert payload["answer"] == "답변"
-    assert payload["sources"][0]["title"] == "기사"
+    run = json.loads(capsys.readouterr().out)["runs"][0]
+    assert run["answer"] == "답변"
+    assert run["sources"][0]["title"] == "기사"
 
 
 # --- 대화 모드 -------------------------------------------------------------
@@ -275,3 +281,173 @@ def test_a_missing_index_is_reported_instead_of_a_traceback(capsys):
 
     assert exit_code == 1
     assert "chroma db not found" in capsys.readouterr().err
+
+
+# --- 여러 기법 한 번에 비교 -------------------------------------------------
+
+
+def test_a_comma_separated_mode_list_becomes_several_variants():
+    variants = cli.parse_variants("dense,bm25", "none")
+
+    assert [v.mode for v in variants] == ["dense", "bm25"]
+
+
+def test_modes_and_expanders_combine_into_every_pairing():
+    variants = cli.parse_variants("dense,bm25", "none,hyde")
+
+    assert [(v.mode, v.expand) for v in variants] == [
+        ("dense", "none"),
+        ("dense", "hyde"),
+        ("bm25", "none"),
+        ("bm25", "hyde"),
+    ]
+
+
+def test_a_variant_is_labelled_by_what_makes_it_different():
+    assert cli.Variant("hybrid", "none").label == "hybrid"
+    assert cli.Variant("hybrid", "hyde").label == "hybrid+hyde"
+
+
+def test_spacing_in_the_list_is_forgiven():
+    assert len(cli.parse_variants("dense, bm25 ,hybrid", "none")) == 3
+
+
+def test_a_repeated_technique_is_not_run_twice():
+    assert len(cli.parse_variants("dense,dense", "none")) == 1
+
+
+def test_an_unknown_technique_is_rejected():
+    with pytest.raises(ValueError):
+        cli.parse_variants("dense,typo", "none")
+
+
+def test_the_mode_flag_accepts_a_list_on_the_command_line():
+    parsed = cli.parse_args(["질문", "--mode", "dense,hybrid"])
+
+    assert [v.label for v in parsed.variants] == ["dense", "hybrid"]
+
+
+def test_a_misspelled_mode_exits_with_a_message():
+    with pytest.raises(SystemExit):
+        cli.parse_args(["질문", "--mode", "dense,typo"])
+
+
+def test_chat_mode_takes_a_single_variant():
+    with pytest.raises(SystemExit):
+        cli.parse_args(["--chat", "--mode", "dense,bm25"])
+
+
+def test_each_variant_runs_and_is_labelled_in_the_output(capsys):
+    loaders = FakeLoaders(results=[{"title": "기사", "url": "https://ex.com/1"}])
+
+    cli.main(["질문", "--mode", "dense,bm25", "--retrieval-only"], loaders=loaders)
+
+    out = capsys.readouterr().out
+    assert "dense" in out and "bm25" in out
+    assert len(loaders.dense_retriever.calls) == 1
+    assert len(loaders.bm25_retriever.calls) == 1
+
+
+def test_the_heavy_models_are_loaded_once_across_variants():
+    # chunk_id는 RRF가 두 결과 목록을 맞추는 키다. hybrid를 태우려면 있어야 한다.
+    loaders = FakeLoaders(results=[{"chunk_id": "c1", "title": "기사"}])
+
+    cli.main(["질문", "--mode", "dense,hybrid", "--retrieval-only"], loaders=loaders)
+
+    # dense는 두 변형 모두가 쓴다. 같은 객체를 재사용해야 BGE-M3가 한 번만 올라간다.
+    assert len(loaders.dense_retriever.calls) == 2
+
+
+def test_comparing_variants_reports_which_articles_they_agree_on():
+    runs = [
+        (cli.Variant("dense", "none"), [{"article_id": 1, "title": "A"}, {"article_id": 2, "title": "B"}]),
+        (cli.Variant("bm25", "none"), [{"article_id": 2, "title": "B"}]),
+    ]
+
+    table = cli.comparison_table(runs)
+
+    assert "dense" in table and "bm25" in table
+    row_a = next(line for line in table.splitlines() if line.rstrip().endswith("A"))
+    row_b = next(line for line in table.splitlines() if line.rstrip().endswith("B"))
+    assert "·" in row_a, "A는 bm25가 못 찾았으므로 빈 칸이어야 한다"
+    assert "·" not in row_b, "B는 두 변형 모두 찾았다"
+
+
+def test_articles_every_variant_found_are_listed_first():
+    runs = [
+        (cli.Variant("dense", "none"), [{"article_id": 1, "title": "A"}, {"article_id": 2, "title": "B"}]),
+        (cli.Variant("bm25", "none"), [{"article_id": 2, "title": "B"}]),
+    ]
+
+    lines = cli.comparison_table(runs).splitlines()
+
+    assert next(i for i, l in enumerate(lines) if l.rstrip().endswith("B")) < next(
+        i for i, l in enumerate(lines) if l.rstrip().endswith("A")
+    )
+
+
+def test_a_single_variant_gets_no_comparison_table(capsys):
+    loaders = FakeLoaders(results=[{"title": "기사"}])
+
+    cli.main(["질문", "--mode", "dense", "--retrieval-only"], loaders=loaders)
+
+    assert "비교" not in capsys.readouterr().out
+
+
+def test_json_output_carries_one_entry_per_variant(capsys):
+    loaders = FakeLoaders(results=[{"title": "기사", "url": "https://ex.com/1"}])
+
+    cli.main(["질문", "--mode", "dense,bm25", "--retrieval-only", "--json"], loaders=loaders)
+
+    payload = json.loads(capsys.readouterr().out)
+    assert [run["variant"] for run in payload["runs"]] == ["dense", "bm25"]
+
+
+def test_a_chat_session_can_be_logged_as_json_per_turn(capsys):
+    pipeline = RecordingPipeline()
+    turns = iter(["질문", "exit"])
+
+    cli.run_chat(pipeline, Namespace(top_k=5, json=True), input_fn=lambda _: next(turns))
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["answer"] == "응답"
+    assert payload["question"] == "질문"
+
+
+# --- 비교할 조합을 직접 지정 -------------------------------------------------
+
+
+def test_a_variant_can_be_named_the_way_the_table_prints_it():
+    assert cli.parse_variant_label("hybrid+hyde") == cli.Variant("hybrid", "hyde")
+    assert cli.parse_variant_label("dense") == cli.Variant("dense", "none")
+
+
+def test_a_nonsense_variant_label_is_rejected():
+    with pytest.raises(ValueError):
+        cli.parse_variant_label("dense+hyde+bm25")
+    with pytest.raises(ValueError):
+        cli.parse_variant_label("dense+typo")
+
+
+def test_compare_runs_exactly_the_combinations_that_were_named():
+    parsed = cli.parse_args(
+        ["질문", "--compare", "dense,hybrid,dense+hyde,dense+multi_query"]
+    )
+
+    assert [v.label for v in parsed.variants] == [
+        "dense",
+        "hybrid",
+        "dense+hyde",
+        "dense+multi_query",
+    ]
+
+
+def test_compare_takes_precedence_over_the_mode_sweep():
+    parsed = cli.parse_args(["질문", "--mode", "bm25", "--compare", "dense"])
+
+    assert [v.label for v in parsed.variants] == ["dense"]
+
+
+def test_compare_still_cannot_be_used_with_chat():
+    with pytest.raises(SystemExit):
+        cli.parse_args(["--chat", "--compare", "dense,hybrid"])
