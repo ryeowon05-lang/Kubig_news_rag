@@ -10,6 +10,8 @@
 전처리 코드는 `preprocessing/`, 데이터는 `data/` 아래로 나눠 둡니다.
 
 ```
+cli.py                          # 터미널에서 질의 (검색 방식·확장·게이트 플래그)
+app.py                          # Streamlit UI
 preprocessing/                  # 데이터 준비 단계 코드
 ├── crawler.ipynb               # 네이버 금융 종목 뉴스 수집
 └── clean.py                    # 수집 결과 정제
@@ -229,6 +231,38 @@ BM25 점수를 같이 봐도 최선 조합에서 잡담 6/14가 통과합니다.
 > 0.585 모두 무관한 기사를 가져옵니다. 후속 질문을 독립형 검색어로 재작성하는 단계를
 > 넣으면 해결되며, 그건 "질문 → 검색어" 형태라 `indexing/query_expand.py`에 expander를
 > 하나 더 추가하는 것으로 붙습니다.
+
+### CLI로 질의하기
+
+브라우저 없이 터미널에서 같은 파이프라인을 씁니다. Streamlit 사이드바의 옵션이
+그대로 플래그로 대응합니다.
+
+```bash
+uv run python cli.py "삼성전자 HBM 실적 전망은?"                  # 기본: Hybrid
+uv run python cli.py "005930 주가" --mode bm25                    # BM25만
+uv run python cli.py "HBM 수요" --mode dense --expand hyde        # Dense + HyDE
+uv run python cli.py "코스피 시황" --retrieval-only               # 검색만, API 크레딧 0
+uv run python cli.py --chat --gate                                # 대화 + 검색 게이트
+uv run python cli.py "환율 전망" --json                           # 기계 판독용 출력
+```
+
+| 플래그 | 값 | 뜻 |
+| --- | --- | --- |
+| `--mode` | `dense` / `bm25` / `hybrid` (기본) | 검색 방식 |
+| `--expand` | `none` (기본) / `multi_query` / `hyde` | 질의 확장 |
+| `--gate` | 플래그 | 검색이 필요한 질문인지 LLM이 판단 |
+| `--chat` | 플래그 | 이력을 기억하는 대화 모드 (`exit`으로 종료) |
+| `--retrieval-only` | 플래그 | Claude를 호출하지 않음 — **API 키 없이 동작** |
+| `--top-k` `--candidate-k` `--rrf-k` | 정수 | 반환 개수 / 융합 후보 수 / RRF 상수 |
+| `--device` | `auto` (기본) / `cpu` / `cuda` / `mps` | 임베딩 연산 장치 |
+| `--json` | 플래그 | 질문·답변·출처를 JSON으로 출력 |
+
+답변은 Claude가 쓰는 대로 스트리밍되고, 출처는 검색이 끝나는 즉시 답변보다 먼저
+출력됩니다. 출처 줄의 `RRF 0.0325 · dense #1 · bm25 #2`는 어느 검색기가 몇 위로
+이 청크를 올렸는지를 뜻합니다.
+
+리트리버를 튜닝할 때는 `--retrieval-only`를 쓰세요. 답변 생성은 질문마다 Claude API
+비용이 듭니다.
 
 ### Streamlit UI
 
