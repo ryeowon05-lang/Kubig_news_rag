@@ -2,27 +2,57 @@
 
 한국 금융 뉴스 기반 RAG 에이전트 프로젝트.
 
-현재는 1주차 산출물인 데이터 준비 단계(수집 + 정제)와 그 결과 데이터가
-포함되어 있습니다.
+뉴스 수집·정제부터 청킹과 인덱싱, Dense/BM25/Hybrid 검색,
+Multi-Query·HyDE 질의 확장, Claude 답변 생성, CLI와 Streamlit UI까지 포함합니다.
 
 ## 폴더 구조
 
-전처리 코드는 `preprocessing/`, 데이터는 `data/` 아래로 나눠 둡니다.
+기능별 코드는 `preprocessing/`, `indexing/`, `generation/`으로 나누고,
+원본과 재생성 가능한 산출물은 `data/` 아래에 둡니다.
 
 ```
-cli.py                          # 터미널에서 질의 (검색 방식·확장·게이트 플래그)
-app.py                          # Streamlit UI
-preprocessing/                  # 데이터 준비 단계 코드
-├── crawler.ipynb               # 네이버 금융 종목 뉴스 수집
-└── clean.py                    # 수집 결과 정제
+app.py                              # Streamlit UI
+cli.py                              # 검색 방식·질의 확장·게이트를 비교하는 CLI
+rag.py                              # 검색부터 근거 기반 답변까지 연결하는 RAG 파이프라인
+ui_format.py                        # CLI와 UI가 공유하는 출처 표시 형식
+
+preprocessing/                      # 뉴스 수집 및 정제
+├── crawler.ipynb                   # 네이버 금융 종목 뉴스 수집
+└── clean.py                        # 중복 병합, 본문 정제, 정제 리포트 생성
+
+indexing/                           # 청킹, 인덱싱, 검색
+├── chunk.py                        # 기사 본문을 검색용 청크로 분할
+├── build_index.py                  # BGE-M3 임베딩과 Chroma 인덱스 생성
+├── search.py                       # Dense 검색용 단독 CLI
+├── retriever.py                    # Chroma 기반 Dense retriever
+├── bm25.py                         # 한국어 형태소 기반 BM25 retriever
+├── hybrid.py                       # Dense와 BM25 결과의 RRF 결합
+├── tokenize_ko.py                  # Kiwi 기반 한국어 토큰화
+├── query_preprocess.py             # 질의 정규화와 종목명 별칭 처리
+├── query_expand.py                 # Multi-Query·HyDE 질의 생성
+└── expanding.py                    # 확장 질의별 검색 결과의 RRF 결합
+
+generation/                         # Claude 답변 생성 및 검색 라우팅
+├── README.md                       # 생성 단계의 입력·출력 계약
+├── llm.py                          # Anthropic API 어댑터
+├── prompt.py                       # 근거 인용·답변 거절 규칙 프롬프트
+└── router.py                       # RETRIEVE/CHAT 검색 게이트
 
 data/
-├── raw/                        # 수집 원본 (수정하지 않음)
-│   ├── news_data.json          # 크롤러 산출물
-│   └── crawl_cache/            # 종목별 중간 저장 (git 미추적)
-└── processed/                  # 정제 결과
-    ├── news_data_clean.json    # clean.py 산출물
-    └── clean_report.json       # 정제 규칙별 적용 건수
+├── raw/                            # 수집 원본 (수정하지 않음)
+│   ├── news_data.json              # 크롤러 최종 산출물
+│   └── crawl_cache/                # 종목별 수집 중간 저장 (git 미추적)
+├── processed/                      # 정제·청킹 산출물
+│   ├── news_data_clean.json        # 정제된 기사
+│   ├── clean_report.json           # 정제 규칙별 적용 건수
+│   └── news_chunks.jsonl           # 검색·인덱싱용 청크 (재생성 가능)
+└── chroma/
+    └── chroma.sqlite3              # Dense 검색 인덱스 (재생성 가능)
+
+tests/                              # 전처리·검색·생성·CLI·UI 단위 테스트
+pyproject.toml                      # 프로젝트 메타데이터와 의존성
+uv.lock                             # 재현 가능한 의존성 잠금 파일
+.env.example                        # 필요한 환경 변수 예시
 ```
 
 ## 환경 설정 (uv)
