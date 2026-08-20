@@ -7,7 +7,9 @@ import json
 import subprocess
 from pathlib import Path
 
+from evaluation.ai_assist import generate_question, judge_candidates
 from evaluation.articles import ArticleCatalog
+from evaluation.assignment import create_assignment, stratum_for_date
 from evaluation.pooling import build_pool
 from evaluation.reporting import write_csv, write_json
 from evaluation.runner import DEFAULT_CHUNK_DEPTH, run_evaluation
@@ -27,6 +29,12 @@ def _retrievers() -> dict:
     device = detect_device()
     dense = get_retriever(device=device)
     return {"dense": dense, "hybrid": HybridRetriever(dense=dense, device=device)}
+
+
+def _llm():
+    from generation.llm import ClaudeClient
+
+    return ClaudeClient()
 
 
 def _print(value) -> None:
@@ -68,11 +76,27 @@ def build_parser() -> argparse.ArgumentParser:
     validate.add_argument("--corpus", type=Path, default=DEFAULT_CORPUS)
     validate.add_argument("--allow-draft", action="store_true")
 
-    pool = subparsers.add_parser("pool", help="pool Dense and Hybrid candidates for query-first labeling")
+    assign = subparsers.add_parser("assign", help="create the fixed date-stratified 50-source assignment")
+    assign.add_argument("--corpus", type=Path, default=DEFAULT_CORPUS)
+    assign.add_argument("--seed", type=int, default=42)
+    assign.add_argument("--output", type=Path, required=True)
+
+    generate = subparsers.add_parser("generate-question", help="ask Claude for one draft source-seeded question")
+    generate.add_argument("article_id", type=int)
+    generate.add_argument("--category", required=True)
+    generate.add_argument("--query-id", required=True)
+    generate.add_argument("--author", required=True, choices=("annotator_a", "annotator_b"))
+    generate.add_argument("--corpus", type=Path, default=DEFAULT_CORPUS)
+
+    pool = subparsers.add_parser("pool", help="pool blind Dense and Hybrid candidates after freezing a question")
     pool.add_argument("question")
-    pool.add_argument("--blind", action="store_true")
     pool.add_argument("--pool-depth", type=int, default=20)
     pool.add_argument("--chunk-depth", type=int, default=DEFAULT_CHUNK_DEPTH)
+
+    judge = subparsers.add_parser("judge", help="ask Claude to judge a blind full-corpus candidate pool")
+    judge.add_argument("question")
+    judge.add_argument("--pool-depth", type=int, default=20)
+    judge.add_argument("--chunk-depth", type=int, default=DEFAULT_CHUNK_DEPTH)
 
     run = subparsers.add_parser("run", help="run paired article-level evaluation")
     run.add_argument("evaluation_file", type=Path)
@@ -85,9 +109,10 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main(argv: list[str] | None = None, *, retriever_factory=None) -> int:
+def main(argv: list[str] | None = None, *, retriever_factory=None, llm_factory=None) -> int:
     args = build_parser().parse_args(argv)
     factory = retriever_factory or _retrievers
+    make_llm = llm_factory or _llm
     if args.command == "articles":
         catalog = ArticleCatalog.from_json(args.corpus)
         if args.article_command == "get":
@@ -101,13 +126,40 @@ def main(argv: list[str] | None = None, *, retriever_factory=None) -> int:
         _print(value)
         return 0
 
-    if args.command == "pool":
+    if args.command == "assign":
+        with args.corpus.open(encoding="utf-8") as stream:
+            assignment = create_assignment(json.load(stream), seed=args.seed)
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(json.dumps(assignment, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        print(f"wrote {args.output}")
+        return 0
+
+    if args.command == "generate-question":
+        source = ArticleCatalog.from_json(args.corpus).get(args.article_id)
+        draft = generate_question(source, args.category, make_llm())
+        draft.update({
+            "query_id": args.query_id,
+            "construction_method": "source_seeded",
+            "date_stratum": stratum_for_date(source["date"]),
+            "evidence": [{
+                "article_id": source["article_id"], "title": source["title"],
+                "support": draft.pop("ai_rationale"), "relevance": "relevant",
+            }],
+            "author": args.author, "reviewer": None,
+            "annotation_minutes": None, "naturalness": None, "gold_clarity": None,
+            "notes": "AI-generated draft; author must freeze question and complete self_check.",
+        })
+        _print(draft)
+        return 0
+
+    if args.command in {"pool", "judge"}:
         retrievers = factory()
         hits = {
             system: retriever.retrieve(args.question, top_k=args.chunk_depth)
             for system, retriever in retrievers.items()
         }
-        _print(build_pool(hits["dense"], hits["hybrid"], depth=args.pool_depth, blind=args.blind))
+        candidates = build_pool(hits["dense"], hits["hybrid"], depth=args.pool_depth)
+        _print(candidates if args.command == "pool" else judge_candidates(args.question, candidates, make_llm()))
         return 0
 
     catalog = ArticleCatalog.from_json(args.corpus)
@@ -122,6 +174,12 @@ def main(argv: list[str] | None = None, *, retriever_factory=None) -> int:
 
     if not args.chunks.is_file():
         raise FileNotFoundError(f"chunk file not found: {args.chunks}")
+    with args.corpus.open(encoding="utf-8") as stream:
+        corpus_articles = json.load(stream)
+    stratum_counts = {}
+    for article in corpus_articles:
+        label = stratum_for_date(article["date"])
+        stratum_counts[label] = stratum_counts.get(label, 0) + 1
     report = run_evaluation(
         records, factory(), question_path=args.evaluation_file,
         corpus_article_count=len(catalog.article_ids), corpus_chunk_count=_count_jsonl(args.chunks),
@@ -130,6 +188,7 @@ def main(argv: list[str] | None = None, *, retriever_factory=None) -> int:
             "collection": DEFAULT_COLLECTION, "candidate_k": DEFAULT_CANDIDATE_K, "rrf_k": DEFAULT_RRF_K,
         },
         git_commit=_git_commit(), chunk_depth=args.chunk_depth,
+        source_article_count=50, stratum_corpus_counts=stratum_counts,
     )
     json_output = args.json_output
     csv_output = args.csv_output or json_output.with_suffix(".csv")

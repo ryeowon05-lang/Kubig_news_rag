@@ -5,7 +5,7 @@ from __future__ import annotations
 from evaluation.metrics import dedupe_articles
 
 
-def build_pool(dense_hits: list[dict], hybrid_hits: list[dict], *, depth: int = 20, blind: bool = False) -> list[dict]:
+def build_pool(dense_hits: list[dict], hybrid_hits: list[dict], *, depth: int = 20) -> list[dict]:
     rankings = {
         "dense": dedupe_articles(dense_hits, depth),
         "hybrid": dedupe_articles(hybrid_hits, depth),
@@ -29,8 +29,6 @@ def build_pool(dense_hits: list[dict], hybrid_hits: list[dict], *, depth: int = 
                 order.append(article_id)
             pooled[article_id][f"{system}_rank"] = rank
     result = [pooled[article_id] for article_id in order]
-    if not blind:
-        return result
     visible = ("article_id", "title", "date", "content", "url", "doc_type")
     return [
         {"candidate_id": f"candidate_{index:03d}", **{field: item[field] for field in visible}}

@@ -1,118 +1,97 @@
-# Dense vs Hybrid Retrieval 파일럿 평가
+# Dense vs Hybrid retrieval 파일럿 평가
 
-이 디렉터리는 사람이 만든 질문과 gold article로 기존 Dense Retrieval과 Hybrid
-Retrieval을 비교합니다. 파일럿 목표는 8문항으로 평가 제작 방식의 실현 가능성,
-질문의 자연스러움, gold 명확성, 라벨링 시간을 확인하는 것입니다. 표본이 작으므로
-통계적 우월성이나 일반적인 시스템 성능을 주장할 수 없습니다.
+이 평가는 50개의 source_seeded 질문으로 기존 Dense Retrieval과 Hybrid Retrieval을 비교합니다.
+질문 제작용 source article은 50개지만 검색 corpus는 축소하지 않습니다. 두 시스템 모두 전체
+432개 기사와 1,377개 청크에서 검색하며 기존 candidate_k, rrf_k, Chroma 설정을 그대로 사용합니다.
 
-## 질문 제작 방식
+## 표본 선정과 배정
 
-`source_seeded`는 전체 정제 corpus에서 retrieval score를 보지 않고 기사를 먼저
-고른 뒤, 사람이 해당 기사로 답할 수 있는 자연스러운 질문을 씁니다. 제목이나 본문
-문장을 그대로 복사하면 lexical overlap으로 평가가 쉬워지는 누수가 생기므로 피합니다.
-선택 기사는 initial gold이며, 검색 결과에서 발견한 다른 정답 기사는 교차검수 후
-gold에 추가할 수 있습니다.
+assign 명령은 retrieval 결과나 예상 성능을 보지 않고 고정 seed로 날짜 층화표본을 만듭니다.
 
-`query_first`는 기사를 먼저 보지 않고 실제 사용자처럼 질문을 고정합니다. 그 후
-Dense와 Hybrid의 서로 다른 기사 top-20을 pooling해 사람이 relevance를 판정합니다.
-검색 결과를 본 뒤 질문 문구를 바꾸지 않습니다. `--blind`를 사용하면 판정 중 시스템
-이름과 순위를 숨길 수 있습니다.
+| 날짜 stratum | corpus 기사 수 | 표본 | annotator_a | annotator_b |
+|---|---:|---:|---:|---:|
+| 2026-07-31~2026-08-05 | 65 | 10 | 5 | 5 |
+| 2026-08-06 | 67 | 10 | 5 | 5 |
+| 2026-08-07 | 195 | 18 | 9 | 9 |
+| 2026-08-08 | 105 | 12 | 6 | 6 |
 
-두 방식 모두 `data/processed/news_data_clean.json`의 전체 432개 기사와 기존 전체
-청크 인덱스를 검색합니다. source-seeded 기사를 별도 corpus로 만들지 않습니다.
+    uv run python -m evaluation.cli assign --seed 42 --output evaluation/pilot_assignment.json
 
-## 파일과 검수
+각 stratum의 표본 뒤에는 같은 seed로 섞인 나머지 기사 전체가 reserve 순서로 저장됩니다.
+교체는 incomplete_article, question_not_possible, near_duplicate_event 중 하나의 사유만 허용하며,
+동일 stratum의 다음 reserve를 사용하고 사유를 기록해야 합니다. 교체 판단에 Dense나 Hybrid 결과를
+사용하지 않습니다.
 
-- `pilot_retrieval_eval.jsonl`: 실제 사람이 작성하는 평가 파일. 처음에는 완전히 비어 있습니다.
-- `pilot_retrieval_eval.example.jsonl`: 형식 설명용 draft placeholder. 실제 corpus에 없는
-  음수 ID를 쓰므로 검증에 실패하며, CLI는 이 파일을 자동으로 찾거나 포함하지 않습니다.
+질문 유형 총량은 exact_token 13, abstract 13, multi_aspect 12, factoid 12입니다.
+날짜별 배분은 각각 3/3/2/2, 3/2/3/2, 4/5/4/5, 3/3/3/3입니다. 기사 내용상 배정 유형이
+불가능하면 같은 날짜 stratum 안에서 다른 기사와 유형을 교환해 전체 quota를 유지합니다. 유형은
+검색 조건을 다양화하기 위한 층화 변수이며 특정 시스템에 유리한 질문을 만들기 위한 기준이 아닙니다.
 
-각 레코드는 example 파일과 같은 필드를 가집니다. `category`는 `exact_token`, `entity`,
-`semantic_paraphrase`, `multi_entity`, `temporal_numeric` 중 하나여야 합니다. `evidence`의
-`relevance`는 `relevant`, `not_relevant`, `uncertain` 중 하나입니다.
+## 질문 작성과 self-check
 
-파일럿 분담은 다음과 같습니다.
+pilot_retrieval_eval.jsonl은 실제 50문항 파일이며 현재 완전히 비어 있습니다.
+pilot_retrieval_eval.example.jsonl은 명백한 placeholder 한 줄만 가진 작성 예시이고 CLI가
+자동으로 읽지 않습니다.
 
-- `annotator_a`: source_seeded 2문항, query_first 2문항 작성
-- `annotator_b`: source_seeded 2문항, query_first 2문항 작성
-- 각자 상대방의 4문항을 검수하고 `reviewer`, `review_status`, gold와 evidence를 확정
+AI 초안을 받을 수 있지만 작성자가 source 기사와 대조해 질문을 확정해야 합니다.
 
-실명은 코드에 넣지 않고 각 레코드의 `author`, `reviewer`에 기록합니다. 승인 시 두 값은
-달라야 합니다. 파일럿 작성 중에는 draft와 uncertain을 허용하지만 final 실행에서는
-모두 해결되어야 합니다.
+    uv run python -m evaluation.cli generate-question 123 --category abstract --query-id pilot_001 --author annotator_a
 
-## 기사 탐색과 query-first pooling
+모든 레코드는 construction_method를 source_seeded, review_mode를 ai_assisted_self_check로 사용하고
+seed_article_id를 initial gold로 gold_article_ids에 포함합니다. reviewer는 null이어도 괜찮으며
+가짜 교차검수자를 적지 않습니다. approved가 되려면 작성자가 다음 self_check를 모두 true로 확인합니다.
 
-기사 탐색은 원본·정제 파일을 수정하지 않으며 retrieval score를 표시하지 않습니다.
+- answer_supported_by_source
+- natural_question
+- not_title_copy
+- not_duplicate
+- source_article_id_verified
 
-```powershell
-uv run python -m evaluation.cli articles get 123
-uv run python -m evaluation.cli articles search "HBM" --limit 10
-uv run python -m evaluation.cli articles sample --count 5 --seed 42
-```
+AI-assisted generation과 single-annotator self-check에는 질문·gold 편향을 놓칠 수 있다는 한계가
+있습니다. 교차검수를 수행한 것처럼 해석해서는 안 됩니다.
 
-query-first 질문은 먼저 문구를 확정한 다음 pooled 후보를 만듭니다. 기본 pool은 각
-시스템의 서로 다른 기사 top-20입니다. 청크는 기본 100개를 요청한 뒤 기사 ID로
-중복 제거합니다. 이 `chunk_depth=100`은 서로 다른 기사 수를 확보하기 위한 평가 구현
-세부사항이며 Hybrid의 `candidate_k=20`, `rrf_k=60`이나 RRF 공식을 튜닝하지 않습니다.
+## blind pooling과 추가 gold
 
-```powershell
-uv run python -m evaluation.cli pool "사용자가 먼저 작성한 질문" --blind
-```
+질문과 initial gold를 확정한 뒤에는 질문 문구를 바꾸지 않습니다. 다음 명령은 전체 corpus에서
+Dense와 Hybrid를 실행하고 article_id로 합친 후보를 출력합니다. 출력에는 어느 시스템이
+반환했는지와 원래 순위가 포함되지 않습니다.
 
-blind 출력의 `candidate_id`를 기준으로 검토하되, 실제 JSONL evidence에는 확인한
-`article_id`, 제목, support, relevance를 기록합니다. 도구는 질문이나 gold를 자동으로
-수정하지 않습니다.
+    uv run python -m evaluation.cli pool "확정한 질문"
+    uv run python -m evaluation.cli judge "확정한 질문"
 
-## 검증과 평가 실행
+AI 판정은 relevant, not_relevant, uncertain과 근거 문장을 반환합니다. relevant 기사는 작성자가
+확인한 뒤 gold_article_ids와 evidence에 추가할 수 있고, not_relevant는 추가하지 않습니다.
+uncertain은 작성자가 해결하기 전에는 final validation과 평가 실행이 거부됩니다. AI 출력은 평가
+JSONL을 자동 수정하지 않습니다.
 
-작성 중에는 draft를 명시적으로 허용합니다.
+이 방식은 source 기사 하나만 정답으로 강제하는 known-item retrieval과 다릅니다. Source는 initial
+gold일 뿐이며, pooled 후보 중 질문에 충분히 답하는 다른 기사도 gold가 되는 article-level relevance
+평가입니다. 다른 gold를 찾기 위해 432개 전체를 사람이 읽지는 않습니다.
 
-```powershell
-uv run python -m evaluation.cli validate evaluation/pilot_retrieval_eval.jsonl --allow-draft
-```
+## 검증과 실행
 
-교차검수 후 final 검증과 실행에서는 `--allow-draft`를 빼야 합니다.
+작성 중 draft는 명시적으로 허용해 검증합니다.
 
-```powershell
-uv run python -m evaluation.cli validate evaluation/pilot_retrieval_eval.jsonl
-uv run python -m evaluation.cli run evaluation/pilot_retrieval_eval.jsonl `
-  --json-output evaluation/results/pilot.json `
-  --csv-output evaluation/results/pilot.csv
-```
+    uv run python -m evaluation.cli validate evaluation/pilot_retrieval_eval.jsonl --allow-draft
 
-현재 실제 평가 파일은 비어 있으므로 `run`은 모델이나 인덱스를 로드하지 않고 결과도
-생성하지 않습니다. 실제 실행에는 기존 `data/processed/news_chunks.jsonl`, Chroma DB,
-BGE-M3가 필요합니다. 결과에는 실행 시각, Git commit, 질문 파일 SHA-256, corpus 수,
-retrieval 설정, 문항·시스템별 raw 청크 및 unique 기사 순위, 지표, latency와 error가
-저장됩니다. API key, 환경변수 값, 로컬 경로, 모델 캐시 경로는 저장하지 않습니다.
+최종 실행 전에는 모든 문항이 approved이고 uncertain이 없어야 합니다.
 
-## 평가 단위와 지표
+    uv run python -m evaluation.cli validate evaluation/pilot_retrieval_eval.jsonl
+    uv run python -m evaluation.cli run evaluation/pilot_retrieval_eval.jsonl --json-output evaluation/results/pilot.json --csv-output evaluation/results/pilot.csv
 
-Retriever는 청크를 반환하지만 primary 평가는 기사 단위입니다. 겹치는 청크 때문에
-한 기사가 여러 순위를 차지할 수 있으므로 충분한 청크를 먼저 받은 뒤 `article_id`로
-중복 제거하고 최초 등장 순위를 보존합니다. 청크 top-5를 먼저 자르지 않습니다. raw
-청크 순위와 기사별 `chunk_ids`는 진단용으로 남기지만, 사람이 gold chunk를 라벨링하지
-않았으므로 chunk-level Recall이나 성능 우열을 주장하지 않습니다.
+실제 평가 파일이 비어 있으면 retriever를 로드하거나 결과 파일을 만들지 않습니다. 결과에는 실행 시각,
+Git commit, 질문 파일 SHA-256, 전체 corpus 크기, source article 수, retrieval 설정, raw chunk 순위와
+중복 제거한 article 순위가 기록됩니다. API key나 로컬 캐시 경로는 저장하지 않습니다.
 
-- Hit@k(출력상 Recall@k 별칭 가능): 상위 k개의 서로 다른 기사 중 하나 이상이
-  `gold_article_ids`에 포함되면 문항 값 1, 아니면 0이며 이를 전체 문항에서 평균
-- MRR@5: 최초 relevant 기사가 5위 이내이면 그 순위의 역수, 없으면 0
-- top-5 overlap: Dense와 Hybrid의 서로 다른 기사 top-5 교집합 크기
+지표는 기사 단위 Hit@1/3/5와 MRR@5이며 전체, 날짜 stratum별, 질문 유형별로 출력됩니다. 날짜별
+요약에는 해당 stratum의 corpus 기사 수와 표본 수도 포함됩니다. 날짜별 표본이 작으므로 날짜 차이는
+탐색적으로만 해석하며 통계적 우월성을 주장하지 않습니다.
 
-construction method별 평균은 2~4문항에 불과해 매우 불안정합니다. 성능 차이가 크게
-보이는 방식을 자동 선택하지 말고, 사람이 질문 자연스러움, gold 명확성, 라벨링 시간,
-누수·편향 통제 가능성을 차례로 검토해 최종 방식을 정합니다.
+## 실제 문항 작성 순서
 
-## 다음 문항 추가 절차
-
-1. 두 annotator가 배정에 따라 각 4문항을 `pilot_retrieval_eval.jsonl`에 draft로 작성합니다.
-2. source-seeded는 score 없는 `articles sample/get/search`만 사용합니다.
-3. query-first는 질문을 먼저 고정한 뒤 blind pool을 읽고 evidence와 gold를 기록합니다.
-4. `validate ... --allow-draft`로 형식과 corpus ID를 확인합니다.
-5. 상대방 문항을 교차검수하고 uncertain을 해소한 뒤 approved로 변경합니다.
-6. final validate 후 paired 평가를 한 번 실행합니다.
-7. 문항별 결과와 기술통계만 검토하여 최종 질문 제작 방식을 사람이 결정합니다.
-
-최종 방식을 확정한 뒤에는 50문항을 두 사람이 25개씩 작성하고, 상대방의 25문항을
-교차검수합니다. 파일럿 결과나 모델 점수를 보고 질문을 수정·선별하지 않습니다.
+1. assign으로 고정 배정표와 reserve를 생성합니다.
+2. 각 작성자는 배정된 source 기사를 읽고 AI 초안을 참고해 질문과 initial gold를 확정합니다.
+3. 다섯 가지 self-check를 직접 확인하고 질문을 동결합니다.
+4. Dense/Hybrid blind pool을 만들고 AI 판정 근거를 검토합니다.
+5. relevant 후보는 추가 gold로 반영하고 uncertain은 작성자가 직접 해결합니다.
+6. final validation 후 전체 432개 기사 corpus에서 paired 평가를 한 번 실행합니다.

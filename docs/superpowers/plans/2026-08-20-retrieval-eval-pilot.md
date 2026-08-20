@@ -1,106 +1,64 @@
-# Retrieval Evaluation Pilot Implementation Plan
+# Source-Seeded Retrieval Evaluation Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build a human-authored, article-level pilot framework that validates, pools, runs, and reports paired Dense and Hybrid retrieval evaluation.
+**Goal:** Simplify the framework to a deterministic 50-question source-seeded evaluation with AI-assisted drafting and blind relevance judgment.
 
-**Architecture:** A standalone `evaluation` package keeps annotation and metric policy out of production retrieval code. Pure schema/metric functions feed an injected-retriever runner; a thin CLI connects existing loaders and writes deterministic JSON/CSV artifacts.
+**Architecture:** Strict schema and assignment modules own evaluation policy. AI helpers emit draft-only structured artifacts, while existing retrievers provide full-corpus candidates and the runner retains article-level metrics.
 
-**Tech Stack:** Python 3.13 standard library, existing DenseRetriever/HybridRetriever, pytest
+**Tech Stack:** Python 3.13 standard library, existing ClaudeClient, DenseRetriever, HybridRetriever, pytest
 
 **Spec:** `docs/superpowers/specs/2026-08-20-retrieval-eval-pilot-design.md`
 
 ## Global Constraints
 
-- Do not modify retrieval settings, source data, cleaned data, chunks, Chroma, or RRF behavior.
-- Do not generate or approve evaluation questions.
-- Use article-level Hit@1/3/5 and MRR@5 as primary metrics; chunk rankings are diagnostic.
-- Do not add dependencies or expose secrets, environment values, or local paths.
+- Search all 432 articles and 1,377 chunks; never reduce the corpus to 50 sources.
+- Do not change Chroma, cleaned/chunk data, model, candidate_k, rrf_k, or RRF.
+- AI output is draft-only; approval requires author self-check and no uncertainty.
+- Do not commit or push without a separate user request.
 
 ---
 
-### Task 1: Schema validation and article browser
+### Task 1: Source-seeded schema
 
-**Files:**
-- Create: `evaluation/__init__.py`
-- Create: `evaluation/schema.py`
-- Create: `evaluation/articles.py`
-- Create: `evaluation/pilot_retrieval_eval.jsonl`
-- Create: `evaluation/pilot_retrieval_eval.example.jsonl`
-- Test: `tests/test_evaluation_schema.py`
-- Test: `tests/test_evaluation_articles.py`
+**Files:** Modify `evaluation/schema.py`, example JSONL, and `tests/test_evaluation_schema.py`.
 
-**Interfaces:**
-- Produces: `load_records(path) -> list[dict]`, `validate_records(records, article_ids, *, allow_draft) -> None`, `ArticleCatalog.from_json(path)`, and lookup/search/sample methods.
+**Interfaces:** `validate_records(records, article_ids, *, allow_draft) -> None` accepts only the final schema.
 
-- [ ] Write failing table-driven tests for every schema invariant, final/draft policy, lookup, keyword search, deterministic sampling, and absence of scores.
-- [ ] Run `uv run pytest -q tests/test_evaluation_schema.py tests/test_evaluation_articles.py` and confirm missing-module failure.
-- [ ] Implement strict JSONL loading, validation, and read-only corpus browsing with `random.Random(seed)`.
-- [ ] Add an empty real JSONL and one unmistakable draft placeholder to the explicit example file.
-- [ ] Re-run the focused tests and confirm PASS.
-
-### Task 2: Article ranking, pooling, and metrics
-
-**Files:**
-- Create: `evaluation/metrics.py`
-- Create: `evaluation/pooling.py`
-- Test: `tests/test_evaluation_metrics.py`
-- Test: `tests/test_evaluation_pooling.py`
-
-**Interfaces:**
-- Consumes: retriever hits containing `chunk_id` and `article_id`.
-- Produces: `dedupe_articles(hits, top_k)`, `score_ranking(article_ids, gold_ids)`, and `build_pool(dense_hits, hybrid_hits, depth, blind)`.
-
-- [ ] Write failing tests for duplicate chunks, first-rank preservation, unique top-five after over-retrieval, multiple golds, misses, Hit@1/3/5, MRR@5, overlap, pooled deduplication, and blind output.
-- [ ] Run focused tests and confirm missing behavior failures.
-- [ ] Implement pure ranking and pooling functions with literal, stable result dictionaries.
+- [ ] Add failing tests for rejected query_first, required seed, nullable reviewer, fixed review mode, five self-check booleans, initial source gold, additional relevant gold, and final uncertain rejection.
+- [ ] Run focused tests and confirm expected failures.
+- [ ] Implement minimal validation and update the draft example.
 - [ ] Re-run focused tests and confirm PASS.
 
-### Task 3: Paired runner and reproducible reporting
+### Task 2: Deterministic assignment
 
-**Files:**
-- Create: `evaluation/runner.py`
-- Create: `evaluation/reporting.py`
-- Test: `tests/test_evaluation_runner.py`
-- Test: `tests/test_evaluation_reporting.py`
+**Files:** Create `evaluation/assignment.py`, `tests/test_evaluation_assignment.py`; modify `evaluation/cli.py`.
 
-**Interfaces:**
-- Consumes: validated records, injected `dict[str, Retriever]`, corpus/chunk counts, retrieval settings, explicit question path.
-- Produces: paired per-system results, construction-method summaries, `write_json`, and `write_csv`.
+**Interfaces:** `create_assignment(articles, seed) -> dict`, `replace_source(assignment, position, reason_code) -> dict`, and `swap_categories(assignment, first_position, second_position) -> dict`.
 
-- [ ] Write failing fake-retriever tests for paired calls at chunk depth 100, raw/unique rankings, latency/error, SHA-256, Git/settings metadata, summaries, uncertain counts, and flat CSV rows.
-- [ ] Run focused tests and confirm missing behavior failures.
-- [ ] Implement per-system exception capture, deterministic metadata serialization, aggregation, and output writers.
-- [ ] Ensure empty input returns no results and the CLI can skip artifact creation.
+- [ ] Add failing tests for 10/10/18/12 strata, 25/25 authors with 5/5/9/9/6/6 splits, 13/13/12/12 categories spread within dates, reproducibility, same-stratum reserves, predefined replacement reasons, and quota-preserving within-stratum category swaps.
+- [ ] Run focused tests and confirm missing behavior.
+- [ ] Implement deterministic sampling and an `assign` CLI command without retrieval imports.
 - [ ] Re-run focused tests and confirm PASS.
 
-### Task 4: CLI and human workflow documentation
+### Task 3: AI-assisted drafting and blind judging
 
-**Files:**
-- Create: `evaluation/cli.py`
-- Create: `evaluation/README.md`
-- Test: `tests/test_evaluation_cli.py`
+**Files:** Create `evaluation/ai_assist.py`, `tests/test_evaluation_ai_assist.py`; modify `evaluation/pooling.py`, `evaluation/cli.py`, and pooling/CLI tests.
 
-**Interfaces:**
-- Consumes: explicit CLI paths and existing retriever factories.
-- Produces: `articles get/search/sample`, `pool`, `validate`, and `run` commands.
+**Interfaces:** `generate_question(article, category, llm) -> dict`, `judge_candidates(question, candidates, llm) -> list[dict]`, and always-blind `build_pool(...)`.
 
-- [ ] Write failing CLI tests for explicit input paths, `--allow-draft`, blind pools, empty-run behavior, and help output without loading models.
+- [ ] Add failing fake-LLM tests proving draft-only output, no system/rank leakage, frozen question preservation, three relevance labels, evidence support, and no automatic evaluation-file edit.
 - [ ] Run focused tests and confirm failures.
-- [ ] Implement argparse commands and lazy production retriever construction.
-- [ ] Document both construction methods, 2-person workflow, full-corpus rule, metrics, limitations, commands, and adding questions.
-- [ ] Re-run CLI tests and confirm PASS.
+- [ ] Implement strict JSON parsing, prompt boundaries, always-blind pools, and `generate-question`/`judge` CLI commands.
+- [ ] Re-run focused tests and confirm PASS.
 
-### Task 5: Verification and publication
+### Task 4: Results, documentation, and verification
 
-**Files:** all evaluation framework files listed above.
+**Files:** Modify `evaluation/runner.py`, `evaluation/README.md`, reporting/runner tests, design and plan docs.
 
-**Interfaces:** no new interfaces.
+**Interfaces:** result metadata distinguishes `corpus.article_count=432` from `source_article_count=50`; summaries include overall, date-stratum, category metrics, stratum corpus/sample counts, and the AI/self-check limitation.
 
-- [ ] Run `uv run pytest -q` and confirm zero failures.
-- [ ] Run `uv lock --check` and confirm the lock is unchanged and valid.
-- [ ] Run `git diff --check` and inspect `git diff` and `git status --short`.
-- [ ] Stage only evaluation framework, tests, README/spec/plan files explicitly.
-- [ ] Run `git diff --cached --check` and inspect `git diff --cached`.
-- [ ] Commit with `feat: add retrieval evaluation pilot framework`.
-- [ ] Push `feat/retrieval-eval-pilot` without merging to `main`.
+- [ ] Add failing tests for full-corpus metadata and limitation text.
+- [ ] Implement metadata/summary changes and replace the two-method documentation with the final 50-question workflow and known-item distinction.
+- [ ] Run all evaluation tests, then `uv run pytest -q`, `uv lock --check`, and `git diff --check`.
+- [ ] Inspect status and report changes without committing or pushing.

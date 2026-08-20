@@ -5,14 +5,20 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-METHODS = {"source_seeded", "query_first"}
-CATEGORIES = {"exact_token", "entity", "semantic_paraphrase", "multi_entity", "temporal_numeric"}
+METHODS = {"source_seeded"}
+CATEGORIES = {"exact_token", "abstract", "multi_aspect", "factoid"}
 STATUSES = {"draft", "approved"}
 RELEVANCE = {"relevant", "not_relevant", "uncertain"}
+REVIEW_MODES = {"ai_assisted_self_check"}
+DATE_STRATA = {"2026-07-31_to_2026-08-05", "2026-08-06", "2026-08-07", "2026-08-08"}
+SELF_CHECK_FIELDS = {
+    "answer_supported_by_source", "natural_question", "not_title_copy",
+    "not_duplicate", "source_article_id_verified",
+}
 REQUIRED_FIELDS = {
     "query_id", "question", "construction_method", "category", "seed_article_id",
     "gold_article_ids", "evidence", "author", "reviewer", "review_status",
-    "annotation_minutes", "naturalness", "gold_clarity", "notes",
+    "date_stratum", "review_mode", "self_check", "annotation_minutes", "naturalness", "gold_clarity", "notes",
 }
 
 
@@ -49,8 +55,10 @@ def validate_records(records: list[dict], article_ids: set[int], *, allow_draft:
             raise ValueError(f"{query_id}: invalid construction_method")
         if record["category"] not in CATEGORIES:
             raise ValueError(f"{query_id}: invalid category")
+        if record["date_stratum"] not in DATE_STRATA:
+            raise ValueError(f"{query_id}: invalid date_stratum")
         seed_id = record["seed_article_id"]
-        if method == "source_seeded" and seed_id is None:
+        if seed_id is None:
             raise ValueError(f"{query_id}: source_seeded requires seed_article_id")
         if seed_id is not None and seed_id not in article_ids:
             raise ValueError(f"{query_id}: seed_article_id is not in corpus")
@@ -61,6 +69,18 @@ def validate_records(records: list[dict], article_ids: set[int], *, allow_draft:
             raise ValueError(f"{query_id}: duplicate gold_article_ids")
         if any(item not in article_ids for item in gold):
             raise ValueError(f"{query_id}: gold_article_ids contain an ID outside the corpus")
+        if seed_id not in gold:
+            raise ValueError(f"{query_id}: gold_article_ids must include seed_article_id as initial gold")
+        reviewer = record["reviewer"]
+        if reviewer is not None and not isinstance(reviewer, str):
+            raise ValueError(f"{query_id}: reviewer must be a string or null")
+        if record["review_mode"] not in REVIEW_MODES:
+            raise ValueError(f"{query_id}: invalid review_mode")
+        self_check = record["self_check"]
+        if not isinstance(self_check, dict) or set(self_check) != SELF_CHECK_FIELDS:
+            raise ValueError(f"{query_id}: self_check must contain all required fields")
+        if any(type(value) is not bool for value in self_check.values()):
+            raise ValueError(f"{query_id}: self_check values must be boolean")
         status = record["review_status"]
         if status not in STATUSES:
             raise ValueError(f"{query_id}: invalid review_status")
@@ -68,8 +88,8 @@ def validate_records(records: list[dict], article_ids: set[int], *, allow_draft:
             raise ValueError(f"{query_id}: draft is not allowed in final evaluation")
         if status == "approved" and not gold:
             raise ValueError(f"{query_id}: approved records require gold_article_ids")
-        if status == "approved" and record["author"] == record["reviewer"]:
-            raise ValueError(f"{query_id}: author and reviewer must differ when approved")
+        if status == "approved" and not all(self_check.values()):
+            raise ValueError(f"{query_id}: approved records require every self_check item to be true")
         for evidence in record["evidence"]:
             if not {"article_id", "title", "support", "relevance"} <= evidence.keys():
                 raise ValueError(f"{query_id}: evidence requires article_id, title, support, and relevance")

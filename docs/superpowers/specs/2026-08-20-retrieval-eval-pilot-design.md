@@ -1,82 +1,45 @@
-# Retrieval Evaluation Pilot Design
+# Source-Seeded Retrieval Evaluation Design
 
 ## Purpose
 
-Build a human-authored pilot framework for comparing the existing Dense and
-Hybrid retrievers at article level. The framework supports eight eventual
-questions across `source_seeded` and `query_first`, but it does not generate or
-approve questions and does not produce performance results while the real
-evaluation file is empty.
+Build a 50-question, source-seeded evaluation of the existing Dense and Hybrid
+retrievers. Fifty unique source articles are sampled deterministically from the
+full 432-article corpus; each is an initial gold, but other pooled articles may
+also be relevant. Search always uses all 432 articles and 1,377 chunks.
 
-## Boundaries
+## Workflow
 
-- Search always uses the full cleaned corpus and existing full chunk index.
-- Existing model, Chroma, BM25, `candidate_k=20`, `rrf_k=60`, and RRF behavior
-  remain unchanged.
-- Source data, cleaned data, chunks, and indexes remain read-only.
-- Primary metrics are article-level; raw chunk rankings are diagnostic only.
-- No model superiority, significance, or question-construction recommendation
-  is inferred from this small pilot.
+1. Stratify by 2026-07-31–08-05, 08-06, 08-07, and 08-08; sample 10, 10, 18, and 12 unique sources with a fixed seed inside each stratum.
+2. Split every stratum equally between annotators (5/5, 5/5, 9/9, 6/6) and retain every unselected article as a deterministic same-stratum reserve list.
+3. Assign categories within strata as `3/3/2/2`, `3/2/3/2`, `4/5/4/5`, and `3/3/3/3` for exact_token/abstract/multi_aspect/factoid, totaling 13/13/12/12.
+4. Claude proposes a draft question from each source article. The author edits and freezes the question, then performs the required self-check.
+5. Dense and Hybrid search the full corpus. Candidates are merged by `article_id` and stripped of system identity and original rank.
+6. Claude judges blind candidates as relevant, not_relevant, or uncertain and records evidence. The author resolves uncertainty and may add relevant candidates to gold.
+7. Final validation requires approval, complete self-check, the source in gold, and no uncertain evidence.
+8. Paired article-level evaluation produces Hit@1/3/5 and MRR@5 plus diagnostic rankings and overlap.
 
-## Components
+## Schema
 
-- `evaluation/schema.py`: load JSONL and validate record, review, evidence, and
-  corpus-reference invariants.
-- `evaluation/articles.py`: read-only article lookup, keyword search, and seeded
-  random sampling without retrieval scores.
-- `evaluation/pooling.py`: pool Dense and Hybrid candidates by `article_id` and
-  optionally hide system names and ranks during relevance judgment.
-- `evaluation/metrics.py`: preserve raw chunk order, deduplicate by first article
-  occurrence, and calculate Hit@1/3/5, MRR@5, first relevant rank, and overlap.
-- `evaluation/runner.py`: paired execution with injected retrievers, timing,
-  per-question error capture, corpus counts, Git commit, settings, and SHA-256.
-- `evaluation/reporting.py`: deterministic JSON and flat CSV output plus small-
-  sample construction-method summaries.
-- `evaluation/cli.py`: explicit `articles`, `pool`, `validate`, and `run`
-  subcommands. Evaluation paths are explicit; example data is never discovered
-  automatically.
+- `construction_method` must be `source_seeded`.
+- `seed_article_id` is required, exists in the corpus, and is present in `gold_article_ids` for approved records.
+- `category` is exact_token, abstract, multi_aspect, or factoid; `date_stratum` records the fixed source-date stratum.
+- `reviewer` is a string or null; cross-review is not required.
+- `review_mode` must be `ai_assisted_self_check`.
+- `self_check` contains five required booleans: `answer_supported_by_source`, `natural_question`, `not_title_copy`, `not_duplicate`, and `source_article_id_verified`. All must be true for approval.
+- Evidence relevance is relevant, not_relevant, or uncertain. Relevant evidence belongs to gold; final evaluation rejects uncertain items.
 
-## Data Flow
+## Assignment and Replacement
 
-1. Load the explicitly named evaluation JSONL and cleaned article corpus.
-2. Validate all records and referenced article IDs before retrieval.
-3. For each question, ask both retrievers for an evaluation-only chunk depth
-   sufficient to form five unique articles. This does not alter retriever
-   internals or tune Hybrid settings.
-4. Save raw chunk IDs and article IDs, then deduplicate articles while preserving
-   the first occurrence.
-5. Calculate paired article-level metrics and top-five overlap.
-6. Write one reproducible JSON artifact and one flat CSV artifact, excluding
-   secrets, environment values, local paths, and model cache paths.
-7. Summarize each construction method descriptively with an instability warning.
+Assignment uses only article IDs and dates from the cleaned corpus plus `random.Random` with an explicit seed. Retrieval is never involved. Each stratum is shuffled independently; its primary quota is selected and all remaining articles become ordered reserves. Replacement consumes the next reserve from the same stratum and requires one predefined reason: incomplete article, question generation impossible, or near-duplicate event. Category swaps are allowed only inside the same stratum and must preserve global quotas.
 
-## Validation and Failure Policy
+## AI Safety Boundaries
 
-- Schema, duplicate IDs, invalid categories, missing seed IDs, invalid corpus
-  references, invalid gold/evidence relationships, and review conflicts fail
-  before retrieval.
-- Final runs reject drafts and uncertain evidence. Pilot runs allow drafts only
-  with an explicit `--allow-draft` flag.
-- An individual retriever failure is recorded in that system result's `error`
-  field so its paired result remains inspectable; file and configuration errors
-  fail the command.
-- An empty real evaluation file validates successfully but `run` exits without
-  writing misleading performance artifacts.
+`generate-question` and `judge` reuse the existing Claude client but emit draft JSON to stdout or an explicitly named output file. They never edit the evaluation JSONL, never approve a record, never alter a frozen question, and never see system names or ranks during relevance judgment. AI output is validated before display or storage.
 
-## Defaults
+## Results and Limitations
 
-- Article evaluation depth: top five unique articles.
-- Pool depth: top twenty unique articles per system.
-- Chunk over-retrieval depth: 100, documented as an evaluation implementation
-  detail rather than a change to `candidate_k`.
-- Random article sampling seed: 42.
-- Allowed categories: `exact_token`, `entity`, `semantic_paraphrase`,
-  `multi_entity`, and `temporal_numeric`.
+Results record full corpus counts separately from `source_article_count=50`, plus overall, date-stratum, and question-category metrics and per-stratum corpus/sample counts. Date comparisons are exploratory because samples are small. Summaries state that questions and relevance judgments were AI-assisted with single-annotator self-check and no independent cross-review. Unlike strict known-item retrieval, the source is an initial gold rather than the only acceptable answer; blind pooled candidates may expand gold when they answer the frozen question.
 
-## Testing
+## Boundaries and Testing
 
-Tests use fake retrievers and temporary files only. They cover article
-deduplication/order, over-retrieval, multiple golds, metrics, schema/review
-rules, paired outputs, aggregation, raw and unique rankings, and question-file
-SHA-256. Existing tests must continue to pass without loading BGE-M3, opening a
-real Chroma index, or calling Claude.
+Do not change Chroma, source/clean/chunk data, models, `candidate_k`, `rrf_k`, RRF, or the full corpus. Tests use fake retrievers and fake LLMs for schema constraints, deterministic allocation, category quotas, reserve replacement, blind pooling, additional gold, unresolved uncertainty, AI draft-only behavior, metadata, and existing metrics.

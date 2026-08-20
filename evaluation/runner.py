@@ -14,112 +14,91 @@ from evaluation.metrics import dedupe_articles, score_ranking, top_k_overlap
 DEFAULT_CHUNK_DEPTH = 100
 
 
-def _mean(values: list[float | int | None]) -> float | None:
+def _mean(values):
     present = [float(value) for value in values if value is not None]
     return statistics.fmean(present) if present else None
 
 
-def _system_result(record: dict, system: str, retriever, chunk_depth: int) -> dict:
-    started = time.perf_counter()
-    error = None
-    hits = []
+def _system_result(record, system, retriever, chunk_depth):
+    started, error, hits = time.perf_counter(), None, []
     try:
         hits = retriever.retrieve(record["question"], top_k=chunk_depth)
-    except Exception as exc:  # A paired evaluation keeps the other system result.
+    except Exception as exc:
         error = f"{type(exc).__name__}: {exc}"
-    latency = time.perf_counter() - started
-    raw = [
-        {"rank": rank, "chunk_id": hit.get("chunk_id"), "article_id": hit.get("article_id")}
-        for rank, hit in enumerate(hits, 1)
-    ]
+    raw = [{"rank": rank, "chunk_id": hit.get("chunk_id"), "article_id": hit.get("article_id")}
+           for rank, hit in enumerate(hits, 1)]
     unique = dedupe_articles(hits, top_k=5) if not error else []
     scores = score_ranking([item["article_id"] for item in unique], set(record["gold_article_ids"]))
     return {
-        "query_id": record["query_id"],
-        "construction_method": record["construction_method"],
-        "question": record["question"],
-        "category": record["category"],
-        "system": system,
-        "raw_chunk_ranking": raw,
-        "unique_article_ranking": unique,
-        **scores,
-        "top_5_overlap": 0,
-        "latency_seconds": latency,
-        "error": error,
+        "query_id": record["query_id"], "construction_method": record["construction_method"],
+        "question": record["question"], "category": record["category"],
+        "date_stratum": record["date_stratum"], "system": system,
+        "raw_chunk_ranking": raw, "unique_article_ranking": unique, **scores,
+        "top_5_overlap": 0, "latency_seconds": time.perf_counter() - started, "error": error,
     }
 
 
-def _summaries(records: list[dict], results: list[dict]) -> list[dict]:
-    summaries = []
-    for method in ("source_seeded", "query_first"):
-        selected = [record for record in records if record["construction_method"] == method]
-        if not selected:
-            continue
-        ids = {record["query_id"] for record in selected}
-        system_summary = {}
-        for system in ("dense", "hybrid"):
-            rows = [result for result in results if result["query_id"] in ids and result["system"] == system]
-            system_summary[system] = {
-                metric: _mean([row[metric] for row in rows])
-                for metric in ("hit_at_1", "hit_at_3", "hit_at_5", "mrr_at_5")
-            }
-        summaries.append({
-            "construction_method": method,
-            "question_count": len(selected),
-            "mean_annotation_minutes": _mean([record["annotation_minutes"] for record in selected]),
-            "mean_naturalness": _mean([record["naturalness"] for record in selected]),
-            "mean_gold_clarity": _mean([record["gold_clarity"] for record in selected]),
-            "gold_article_count": sum(len(record["gold_article_ids"]) for record in selected),
-            "mean_top_5_overlap": _mean([
-                row["top_5_overlap"] for row in results if row["query_id"] in ids and row["system"] == "dense"
-            ]),
-            "uncertain_evidence_count": sum(
-                evidence.get("relevance") == "uncertain"
-                for record in selected for evidence in record["evidence"]
-            ),
-            "systems": system_summary,
-            "warning": "Averages from 2–4 pilot questions are highly unstable and descriptive only.",
-        })
-    return summaries
+def _group_summary(selected, results):
+    ids = {record["query_id"] for record in selected}
+    systems = {}
+    for system in ("dense", "hybrid"):
+        rows = [row for row in results if row["query_id"] in ids and row["system"] == system]
+        systems[system] = {metric: _mean([row[metric] for row in rows])
+                           for metric in ("hit_at_1", "hit_at_3", "hit_at_5", "mrr_at_5")}
+    return {"question_count": len(selected), "systems": systems}
+
+
+def _summaries(records, results, stratum_corpus_counts):
+    dates = {}
+    for stratum, corpus_count in stratum_corpus_counts.items():
+        selected = [record for record in records if record["date_stratum"] == stratum]
+        dates[stratum] = {**_group_summary(selected, results), "corpus_article_count": corpus_count,
+                          "sample_count": len(selected)}
+    categories = {
+        category: _group_summary([record for record in records if record["category"] == category], results)
+        for category in ("exact_token", "abstract", "multi_aspect", "factoid")
+    }
+    return {
+        "overall": _group_summary(records, results),
+        "by_date_stratum": dates,
+        "by_category": categories,
+        "date_stratum_interpretation": (
+            "Date-stratum results are exploratory because each stratum has a small sample; "
+            "do not claim statistical superiority from these differences."
+        ),
+        "limitations": [
+            "AI-assisted question generation with single-annotator self-check and no cross-review may introduce bias.",
+            "The 50 source articles seed question construction; retrieval still searches all 432 corpus articles.",
+        ],
+    }
 
 
 def run_evaluation(
-    records: list[dict],
-    retrievers: dict[str, object],
-    *,
-    question_path: Path | str,
-    corpus_article_count: int,
-    corpus_chunk_count: int,
-    settings: dict,
-    git_commit: str,
-    chunk_depth: int = DEFAULT_CHUNK_DEPTH,
-    now: Callable[[], str] | None = None,
-) -> dict:
+    records, retrievers, *, question_path, corpus_article_count, corpus_chunk_count,
+    settings, git_commit, source_article_count=50, stratum_corpus_counts=None,
+    chunk_depth=DEFAULT_CHUNK_DEPTH, now: Callable[[], str] | None = None,
+):
     if set(retrievers) != {"dense", "hybrid"}:
         raise ValueError("retrievers must contain exactly dense and hybrid")
-    path = Path(question_path)
-    results = []
+    path, results = Path(question_path), []
     for record in records:
-        paired = {
-            system: _system_result(record, system, retrievers[system], chunk_depth)
-            for system in ("dense", "hybrid")
-        }
+        paired = {system: _system_result(record, system, retrievers[system], chunk_depth)
+                  for system in ("dense", "hybrid")}
         overlap = top_k_overlap(
             [item["article_id"] for item in paired["dense"]["unique_article_ranking"]],
-            [item["article_id"] for item in paired["hybrid"]["unique_article_ranking"]],
-        )
+            [item["article_id"] for item in paired["hybrid"]["unique_article_ranking"]])
         paired["dense"]["top_5_overlap"] = overlap
         paired["hybrid"]["top_5_overlap"] = overlap
         results.extend((paired["dense"], paired["hybrid"]))
     timestamp = now() if now else datetime.now(timezone.utc).isoformat()
     return {
         "metadata": {
-            "executed_at": timestamp,
-            "git_commit": git_commit,
+            "executed_at": timestamp, "git_commit": git_commit,
             "question_sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
             "corpus": {"article_count": corpus_article_count, "chunk_count": corpus_chunk_count},
+            "source_article_count": source_article_count,
             "retrieval_settings": {**settings, "evaluation_chunk_depth": chunk_depth, "article_top_k": 5},
         },
         "results": results,
-        "summaries": _summaries(records, results),
+        "summaries": _summaries(records, results, stratum_corpus_counts or {}),
     }
