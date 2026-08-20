@@ -5,6 +5,7 @@ import sys
 import pytest
 
 from evaluation.cli import main
+from tests.test_evaluation_combine import record
 
 
 def article_file(path):
@@ -76,3 +77,22 @@ def test_assign_cli_writes_stratified_assignment_without_retrievers(tmp_path):
     output = tmp_path / "assignment.json"
     assert main(["assign", "--corpus", str(corpus), "--seed", "42", "--output", str(output)]) == 0
     assert len(json.loads(output.read_text(encoding="utf-8"))["assignments"]) == 50
+
+
+def test_combine_cli_writes_50_records_in_query_id_order(tmp_path):
+    corpus = tmp_path / "articles.json"
+    corpus.write_text(json.dumps([
+        {"id": i, "title": f"title {i}", "content": "body", "date": "2026.08.07",
+         "url": f"https://example.com/{i}", "doc_type": "article"}
+        for i in range(1, 51)
+    ]), encoding="utf-8")
+    kahyun, ryeowon = tmp_path / "kahyun_25.jsonl", tmp_path / "ryeowon_25.jsonl"
+    kahyun.write_text("".join(json.dumps(record(f"K{i:03d}", "kahyun", i)) + "\n"
+                              for i in range(1, 26)), encoding="utf-8")
+    ryeowon.write_text("".join(json.dumps(record(f"R{i:03d}", "ryeowon", i + 25)) + "\n"
+                               for i in range(1, 26)), encoding="utf-8")
+    output = tmp_path / "retrieval_eval_50.jsonl"
+    assert main(["combine", str(kahyun), str(ryeowon), "--output", str(output),
+                 "--corpus", str(corpus)]) == 0
+    assert [json.loads(line)["query_id"] for line in output.read_text().splitlines()] == [
+        *(f"K{i:03d}" for i in range(1, 26)), *(f"R{i:03d}" for i in range(1, 26))]

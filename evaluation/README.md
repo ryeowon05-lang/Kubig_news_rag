@@ -7,8 +7,9 @@
 ## 표본 선정과 배정
 
 assign 명령은 retrieval 결과나 예상 성능을 보지 않고 고정 seed로 날짜 층화표본을 만듭니다.
+작업자는 kahyun과 ryeowon이며 각 날짜층을 절반씩 맡아 서로 다른 기사 25개씩 작성합니다.
 
-| 날짜 stratum | corpus 기사 수 | 표본 | annotator_a | annotator_b |
+| 날짜 stratum | corpus 기사 수 | 표본 | kahyun | ryeowon |
 |---|---:|---:|---:|---:|
 | 2026-07-31~2026-08-05 | 65 | 10 | 5 | 5 |
 | 2026-08-06 | 67 | 10 | 5 | 5 |
@@ -29,9 +30,12 @@ assign 명령은 retrieval 결과나 예상 성능을 보지 않고 고정 seed�
 
 ## 질문 작성과 self-check
 
-pilot_retrieval_eval.jsonl은 실제 50문항 파일이며 현재 완전히 비어 있습니다.
-pilot_retrieval_eval.example.jsonl은 명백한 placeholder 한 줄만 가진 작성 예시이고 CLI가
-자동으로 읽지 않습니다.
+annotations/kahyun_25.jsonl과 annotations/ryeowon_25.jsonl은 각각 kahyun과 ryeowon만 수정하는
+실제 작성 파일입니다. 두 파일은 질문·placeholder·예시 없이 빈 상태로 시작합니다. query_id는
+각각 K001–K025와 R001–R025를 쓰고 author는 파일 소유자와 일치해야 합니다.
+pilot_retrieval_eval.example.jsonl은 명백한 placeholder 한 줄만 가진 작성 예시이고 CLI가 자동으로
+읽지 않습니다. 기존 query-first 및 pooling 기능은 호환을 위해 보존하지만 이번 50문항 제작에는
+query-first를 사용하지 않습니다.
 
 AI 초안을 받을 수 있지만 작성자가 source 기사와 대조해 질문을 확정해야 합니다.
 
@@ -89,9 +93,23 @@ Git commit, 질문 파일 SHA-256, 전체 corpus 크기, source article 수, ret
 
 ## 실제 문항 작성 순서
 
-1. assign으로 고정 배정표와 reserve를 생성합니다.
-2. 각 작성자는 배정된 source 기사를 읽고 AI 초안을 참고해 질문과 initial gold를 확정합니다.
-3. 다섯 가지 self-check를 직접 확인하고 질문을 동결합니다.
-4. Dense/Hybrid blind pool을 만들고 AI 판정 근거를 검토합니다.
-5. relevant 후보는 추가 gold로 반영하고 uncertain은 작성자가 직접 해결합니다.
-6. final validation 후 전체 432개 기사 corpus에서 paired 평가를 한 번 실행합니다.
+1. 두 작업자 모두 작업 시작 전에 현재 프레임워크 브랜치를 pull합니다.
+2. assign으로 고정 배정표와 reserve를 생성합니다. 기사 선정과 담당자 확정은 질문 작성과 별도입니다.
+3. kahyun은 kahyun_25.jsonl만, ryeowon은 ryeowon_25.jsonl만 수정합니다.
+4. 일부 문항만 작성한 상태에서도 각 파일을 --allow-draft로 검증하고 commit·push할 수 있습니다.
+5. 상대방이 먼저 push했다면 자신의 push 전에 최신 변경을 반영합니다.
+6. 작성자는 배정된 source를 읽고 AI 초안을 참고해 질문과 initial gold를 확정한 뒤 self-check합니다.
+7. 질문을 동결하고 blind pool을 판정해 relevant 후보를 추가 gold로 반영하고 uncertain을 해결합니다.
+8. 두 파일이 각각 25개로 완성되면 아래 한 줄 명령으로 최종 파일을 만듭니다.
+
+    uv run python -m evaluation.cli combine evaluation/annotations/kahyun_25.jsonl evaluation/annotations/ryeowon_25.jsonl --output evaluation/retrieval_eval_50.jsonl
+
+combine은 입력 파일을 수정하지 않고 25/25개, author, query_id 범위, 중복 query/source/question,
+approved 상태와 self-check를 모두 검사합니다. 실패 시 기존 출력 파일을 덮어쓰지 않으며 성공 시
+K001–K025, R001–R025 순서로 기록합니다.
+
+9. 최종 파일을 validate한 후 전체 432개 기사 corpus에서 Dense/Hybrid 평가를 실행합니다.
+
+개발 중 개별 검증 예:
+
+    uv run python -m evaluation.cli validate evaluation/annotations/kahyun_25.jsonl --allow-draft

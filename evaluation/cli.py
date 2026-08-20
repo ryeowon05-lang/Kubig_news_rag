@@ -10,6 +10,7 @@ from pathlib import Path
 from evaluation.ai_assist import generate_question, judge_candidates
 from evaluation.articles import ArticleCatalog
 from evaluation.assignment import create_assignment, stratum_for_date
+from evaluation.combine import combine_annotations
 from evaluation.pooling import build_pool
 from evaluation.reporting import write_csv, write_json
 from evaluation.runner import DEFAULT_CHUNK_DEPTH, run_evaluation
@@ -85,7 +86,7 @@ def build_parser() -> argparse.ArgumentParser:
     generate.add_argument("article_id", type=int)
     generate.add_argument("--category", required=True)
     generate.add_argument("--query-id", required=True)
-    generate.add_argument("--author", required=True, choices=("annotator_a", "annotator_b"))
+    generate.add_argument("--author", required=True, choices=("kahyun", "ryeowon"))
     generate.add_argument("--corpus", type=Path, default=DEFAULT_CORPUS)
 
     pool = subparsers.add_parser("pool", help="pool blind Dense and Hybrid candidates after freezing a question")
@@ -97,6 +98,11 @@ def build_parser() -> argparse.ArgumentParser:
     judge.add_argument("question")
     judge.add_argument("--pool-depth", type=int, default=20)
     judge.add_argument("--chunk-depth", type=int, default=DEFAULT_CHUNK_DEPTH)
+
+    combine = subparsers.add_parser("combine", help="validate and combine the two author annotation files")
+    combine.add_argument("annotation_files", nargs=2, type=Path)
+    combine.add_argument("--output", type=Path, required=True)
+    combine.add_argument("--corpus", type=Path, default=DEFAULT_CORPUS)
 
     run = subparsers.add_parser("run", help="run paired article-level evaluation")
     run.add_argument("evaluation_file", type=Path)
@@ -150,6 +156,12 @@ def main(argv: list[str] | None = None, *, retriever_factory=None, llm_factory=N
             "notes": "AI-generated draft; author must freeze question and complete self_check.",
         })
         _print(draft)
+        return 0
+
+    if args.command == "combine":
+        catalog = ArticleCatalog.from_json(args.corpus)
+        records = combine_annotations(args.annotation_files, args.output, catalog.article_ids)
+        print(f"wrote {len(records)} records to {args.output}")
         return 0
 
     if args.command in {"pool", "judge"}:

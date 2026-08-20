@@ -5,8 +5,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-METHODS = {"source_seeded"}
+METHODS = {"source_seeded", "query_first"}
 CATEGORIES = {"exact_token", "abstract", "multi_aspect", "factoid"}
+LEGACY_QUERY_FIRST_CATEGORIES = {"exact_token", "entity", "semantic_paraphrase", "multi_entity", "temporal_numeric"}
 STATUSES = {"draft", "approved"}
 RELEVANCE = {"relevant", "not_relevant", "uncertain"}
 REVIEW_MODES = {"ai_assisted_self_check"}
@@ -18,8 +19,9 @@ SELF_CHECK_FIELDS = {
 REQUIRED_FIELDS = {
     "query_id", "question", "construction_method", "category", "seed_article_id",
     "gold_article_ids", "evidence", "author", "reviewer", "review_status",
-    "date_stratum", "review_mode", "self_check", "annotation_minutes", "naturalness", "gold_clarity", "notes",
+    "annotation_minutes", "naturalness", "gold_clarity", "notes",
 }
+SOURCE_SEEDED_FIELDS = {"date_stratum", "review_mode", "self_check"}
 
 
 def load_records(path: Path | str) -> list[dict]:
@@ -40,8 +42,11 @@ def load_records(path: Path | str) -> list[dict]:
 
 def validate_records(records: list[dict], article_ids: set[int], *, allow_draft: bool) -> None:
     seen = set()
+    seen_questions = set()
     for index, record in enumerate(records, 1):
-        missing = REQUIRED_FIELDS - record.keys()
+        method = record.get("construction_method")
+        required = REQUIRED_FIELDS | (SOURCE_SEEDED_FIELDS if method == "source_seeded" else set())
+        missing = required - record.keys()
         if missing:
             raise ValueError(f"record {index}: missing fields: {', '.join(sorted(missing))}")
         query_id = record["query_id"]
@@ -50,15 +55,19 @@ def validate_records(records: list[dict], article_ids: set[int], *, allow_draft:
         seen.add(query_id)
         if not isinstance(record["question"], str) or not record["question"].strip():
             raise ValueError(f"{query_id}: question cannot be empty")
-        method = record["construction_method"]
+        normalized_question = " ".join(record["question"].split()).casefold()
+        if normalized_question in seen_questions:
+            raise ValueError(f"{query_id}: duplicate question")
+        seen_questions.add(normalized_question)
         if method not in METHODS:
             raise ValueError(f"{query_id}: invalid construction_method")
-        if record["category"] not in CATEGORIES:
+        allowed_categories = CATEGORIES if method == "source_seeded" else LEGACY_QUERY_FIRST_CATEGORIES
+        if record["category"] not in allowed_categories:
             raise ValueError(f"{query_id}: invalid category")
-        if record["date_stratum"] not in DATE_STRATA:
+        if method == "source_seeded" and record["date_stratum"] not in DATE_STRATA:
             raise ValueError(f"{query_id}: invalid date_stratum")
         seed_id = record["seed_article_id"]
-        if seed_id is None:
+        if method == "source_seeded" and seed_id is None:
             raise ValueError(f"{query_id}: source_seeded requires seed_article_id")
         if seed_id is not None and seed_id not in article_ids:
             raise ValueError(f"{query_id}: seed_article_id is not in corpus")
@@ -69,18 +78,19 @@ def validate_records(records: list[dict], article_ids: set[int], *, allow_draft:
             raise ValueError(f"{query_id}: duplicate gold_article_ids")
         if any(item not in article_ids for item in gold):
             raise ValueError(f"{query_id}: gold_article_ids contain an ID outside the corpus")
-        if seed_id not in gold:
+        if method == "source_seeded" and seed_id not in gold:
             raise ValueError(f"{query_id}: gold_article_ids must include seed_article_id as initial gold")
         reviewer = record["reviewer"]
         if reviewer is not None and not isinstance(reviewer, str):
             raise ValueError(f"{query_id}: reviewer must be a string or null")
-        if record["review_mode"] not in REVIEW_MODES:
-            raise ValueError(f"{query_id}: invalid review_mode")
-        self_check = record["self_check"]
-        if not isinstance(self_check, dict) or set(self_check) != SELF_CHECK_FIELDS:
-            raise ValueError(f"{query_id}: self_check must contain all required fields")
-        if any(type(value) is not bool for value in self_check.values()):
-            raise ValueError(f"{query_id}: self_check values must be boolean")
+        self_check = record.get("self_check")
+        if method == "source_seeded":
+            if record["review_mode"] not in REVIEW_MODES:
+                raise ValueError(f"{query_id}: invalid review_mode")
+            if not isinstance(self_check, dict) or set(self_check) != SELF_CHECK_FIELDS:
+                raise ValueError(f"{query_id}: self_check must contain all required fields")
+            if any(type(value) is not bool for value in self_check.values()):
+                raise ValueError(f"{query_id}: self_check values must be boolean")
         status = record["review_status"]
         if status not in STATUSES:
             raise ValueError(f"{query_id}: invalid review_status")
@@ -88,7 +98,7 @@ def validate_records(records: list[dict], article_ids: set[int], *, allow_draft:
             raise ValueError(f"{query_id}: draft is not allowed in final evaluation")
         if status == "approved" and not gold:
             raise ValueError(f"{query_id}: approved records require gold_article_ids")
-        if status == "approved" and not all(self_check.values()):
+        if method == "source_seeded" and status == "approved" and not all(self_check.values()):
             raise ValueError(f"{query_id}: approved records require every self_check item to be true")
         for evidence in record["evidence"]:
             if not {"article_id", "title", "support", "relevance"} <= evidence.keys():

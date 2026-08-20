@@ -54,7 +54,7 @@ def create_assignment(articles: list[dict], *, seed: int = 42) -> dict:
                 "position": position,
                 "source_article_id": article_id,
                 "date_stratum": stratum,
-                "author": "annotator_a" if index < config["author_quota"] else "annotator_b",
+                "author": "kahyun" if index < config["author_quota"] else "ryeowon",
                 "category": category,
                 "replacement": None,
             })

@@ -45,7 +45,7 @@ def test_load_records_reads_nonblank_jsonl_lines(tmp_path):
     ("changes", "message"),
     [
         ({"question": " "}, "question"),
-        ({"construction_method": "query_first"}, "construction_method"),
+        ({"construction_method": "unsupported"}, "construction_method"),
         ({"category": ""}, "category"),
         ({"date_stratum": "2026-08-09"}, "date_stratum"),
         ({"seed_article_id": None}, "seed_article_id"),
@@ -65,9 +65,21 @@ def test_source_seeded_requires_seed_article_id():
         validate_records([record(seed_article_id=None)], {1}, allow_draft=False)
 
 
+def test_legacy_query_first_record_remains_supported():
+    legacy = record(construction_method="query_first", category="entity", seed_article_id=None)
+    for field in ("date_stratum", "review_mode", "self_check"):
+        legacy.pop(field)
+    validate_records([legacy], {1}, allow_draft=False)
+
+
 def test_duplicate_query_ids_are_rejected():
     with pytest.raises(ValueError, match="query_id"):
         validate_records([record(), record()], {1}, allow_draft=False)
+
+
+def test_duplicate_questions_are_rejected():
+    with pytest.raises(ValueError, match="duplicate question"):
+        validate_records([record(), record(query_id="q2", question="  반도체   투자 전망은?  ")], {1}, allow_draft=False)
 
 
 def test_draft_requires_explicit_allow_draft():

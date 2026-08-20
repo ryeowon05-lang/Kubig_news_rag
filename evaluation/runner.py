@@ -32,7 +32,7 @@ def _system_result(record, system, retriever, chunk_depth):
     return {
         "query_id": record["query_id"], "construction_method": record["construction_method"],
         "question": record["question"], "category": record["category"],
-        "date_stratum": record["date_stratum"], "system": system,
+        "date_stratum": record.get("date_stratum", "legacy_query_first"), "system": system,
         "raw_chunk_ranking": raw, "unique_article_ranking": unique, **scores,
         "top_5_overlap": 0, "latency_seconds": time.perf_counter() - started, "error": error,
     }

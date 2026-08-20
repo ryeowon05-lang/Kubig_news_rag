@@ -18,9 +18,9 @@ def test_assignment_stratifies_50_unique_sources_and_balances_authors_and_catego
     assert Counter(item["date_stratum"] for item in items) == {
         "2026-07-31_to_2026-08-05": 10, "2026-08-06": 10, "2026-08-07": 18, "2026-08-08": 12,
     }
-    assert Counter(item["author"] for item in items) == {"annotator_a": 25, "annotator_b": 25}
+    assert Counter(item["author"] for item in items) == {"kahyun": 25, "ryeowon": 25}
     for stratum, per_author in {"2026-07-31_to_2026-08-05": 5, "2026-08-06": 5, "2026-08-07": 9, "2026-08-08": 6}.items():
-        assert Counter(item["author"] for item in items if item["date_stratum"] == stratum) == {"annotator_a": per_author, "annotator_b": per_author}
+        assert Counter(item["author"] for item in items if item["date_stratum"] == stratum) == {"kahyun": per_author, "ryeowon": per_author}
     assert Counter(item["category"] for item in items) == {"exact_token": 13, "abstract": 13, "multi_aspect": 12, "factoid": 12}
     for stratum in assignment["strata"]:
         counts = Counter(item["category"] for item in items if item["date_stratum"] == stratum)
