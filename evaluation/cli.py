@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import subprocess
+from datetime import datetime, timezone
 from pathlib import Path
 
 from evaluation.ai_assist import generate_question, judge_candidates
 from evaluation.articles import ArticleCatalog
 from evaluation.assignment import create_assignment, stratum_for_date
+from evaluation.batch_pooling import build_batch_pool, write_pool_artifacts
 from evaluation.combine import combine_annotations
 from evaluation.pooling import build_pool
 from evaluation.reporting import write_csv, write_json
@@ -21,6 +24,9 @@ from indexing.hybrid import DEFAULT_CANDIDATE_K, DEFAULT_RRF_K
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_CORPUS = PROJECT_ROOT / "data" / "processed" / "news_data_clean.json"
 DEFAULT_RESULT = PROJECT_ROOT / "evaluation" / "results" / "retrieval_eval.json"
+DEFAULT_BLIND_POOL = PROJECT_ROOT / "evaluation" / "pools" / "blind_pool_50.jsonl"
+DEFAULT_POOL_MAPPING = PROJECT_ROOT / "evaluation" / "pools" / "blind_pool_50_mapping.json"
+DEFAULT_POOL_MANIFEST = PROJECT_ROOT / "evaluation" / "pools" / "blind_pool_50_manifest.json"
 
 
 def _retrievers() -> dict:
@@ -53,6 +59,17 @@ def _git_commit() -> str:
         capture_output=True, text=True, check=True,
     )
     return result.stdout.strip()
+
+
+def _git_file_commit(path: Path) -> str:
+    result = subprocess.run(
+        ["git", "log", "-1", "--format=%H", "--", str(path)], cwd=PROJECT_ROOT,
+        capture_output=True, text=True, check=True,
+    )
+    commit = result.stdout.strip()
+    if not commit:
+        raise ValueError(f"no Git commit found for {path}")
+    return commit
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -93,6 +110,19 @@ def build_parser() -> argparse.ArgumentParser:
     pool.add_argument("question")
     pool.add_argument("--pool-depth", type=int, default=20)
     pool.add_argument("--chunk-depth", type=int, default=DEFAULT_CHUNK_DEPTH)
+
+    pool_batch = subparsers.add_parser("pool-batch", help="build atomic blind pools for a frozen evaluation JSONL")
+    pool_batch.add_argument("evaluation_file", type=Path)
+    pool_batch.add_argument("--corpus", type=Path, default=DEFAULT_CORPUS)
+    pool_batch.add_argument("--chunks", type=Path, default=DEFAULT_INPUT)
+    pool_batch.add_argument("--expected-freeze-sha256", required=True)
+    pool_batch.add_argument("--freeze-commit")
+    pool_batch.add_argument("--blind-output", type=Path, default=DEFAULT_BLIND_POOL)
+    pool_batch.add_argument("--mapping-output", type=Path, default=DEFAULT_POOL_MAPPING)
+    pool_batch.add_argument("--manifest-output", type=Path, default=DEFAULT_POOL_MANIFEST)
+    pool_batch.add_argument("--pool-depth", type=int, default=20)
+    pool_batch.add_argument("--chunk-depth", type=int, default=DEFAULT_CHUNK_DEPTH)
+    pool_batch.add_argument("--seed", type=int, default=42)
 
     judge = subparsers.add_parser("judge", help="ask Claude to judge a blind full-corpus candidate pool")
     judge.add_argument("question")
@@ -162,6 +192,47 @@ def main(argv: list[str] | None = None, *, retriever_factory=None, llm_factory=N
         catalog = ArticleCatalog.from_json(args.corpus)
         records = combine_annotations(args.annotation_files, args.output, catalog.article_ids)
         print(f"wrote {len(records)} records to {args.output}")
+        return 0
+
+    if args.command == "pool-batch":
+        question_sha = hashlib.sha256(args.evaluation_file.read_bytes()).hexdigest()
+        if question_sha.casefold() != args.expected_freeze_sha256.casefold():
+            raise ValueError(f"freeze SHA-256 mismatch: expected {args.expected_freeze_sha256}, got {question_sha}")
+        catalog = ArticleCatalog.from_json(args.corpus)
+        records = load_records(args.evaluation_file)
+        validate_records(records, catalog.article_ids, allow_draft=False)
+        if len(records) != 50:
+            raise ValueError(f"pool-batch requires exactly 50 records, got {len(records)}")
+        packets, mapping, stats = build_batch_pool(
+            records, factory(), catalog, seed=args.seed,
+            pool_depth=args.pool_depth, chunk_depth=args.chunk_depth,
+        )
+        manifest = {
+            "freeze_sha256": question_sha,
+            "freeze_commit": args.freeze_commit or _git_file_commit(args.evaluation_file),
+            "corpus_article_count": len(catalog.article_ids),
+            "corpus_chunk_count": _count_jsonl(args.chunks),
+            "collection": DEFAULT_COLLECTION,
+            "embedding_model": DEFAULT_MODEL,
+            "systems": ["dense", "hybrid"],
+            "candidate_k": DEFAULT_CANDIDATE_K,
+            "rrf_k": DEFAULT_RRF_K,
+            "pool_depth": args.pool_depth,
+            "chunk_retrieval_depth": args.chunk_depth,
+            "query_candidate_counts": stats,
+            "random_seed": args.seed,
+            "executed_at": datetime.now(timezone.utc).isoformat(),
+            "execution_git_commit": _git_commit(),
+            "retrieval_success": {"dense": len(records), "hybrid": len(records)},
+            "retrieval_error_count": 0,
+            "judgment_instruction": "Do not open the mapping file during blind AI relevance judgment.",
+        }
+        hashes = write_pool_artifacts(
+            packets, mapping, manifest,
+            args.blind_output, args.mapping_output, args.manifest_output,
+        )
+        print(f"wrote blind pool for {len(records)} queries ({len(mapping)} candidates)")
+        print(json.dumps(hashes, sort_keys=True))
         return 0
 
     if args.command in {"pool", "judge"}:

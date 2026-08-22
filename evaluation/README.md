@@ -60,6 +60,14 @@ AI-assisted generation과 single-annotator self-check에는 질문·gold 편향�
 Dense와 Hybrid를 실행하고 article_id로 합친 후보를 출력합니다. 출력에는 어느 시스템이
 반환했는지와 원래 순위가 포함되지 않습니다.
 
+Freeze된 50문항은 `pool-batch`로 일괄 처리합니다. 이 명령은 AI 판정용 blind packet, 비공개
+mapping, 실행 manifest를 분리해 원자적으로 기록합니다. 다음 AI 관련성 판정 단계에서는 blind
+packet만 사용하고 mapping 파일은 열지 않습니다. Mapping은 판정 완료 후 candidate key를 실제
+article ID와 시스템별 최초 기사 순위에 연결할 때만 사용합니다.
+
+    uv run python -m evaluation.cli pool-batch evaluation/retrieval_eval_50.jsonl \
+        --expected-freeze-sha256 <frozen-file-sha256>
+
     uv run python -m evaluation.cli pool "확정한 질문"
     uv run python -m evaluation.cli judge "확정한 질문"
 
