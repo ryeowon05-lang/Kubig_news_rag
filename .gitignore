@@ -19,6 +19,7 @@ evaluation/results/
 
 # 환경 변수 (API 키 등)
 .env
+evaluation/.checkpoints/
 .env.*
 !.env.example
 

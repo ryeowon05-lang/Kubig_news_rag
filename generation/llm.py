@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Iterator
+from dataclasses import dataclass
 from typing import Any
 
 from dotenv import load_dotenv
@@ -15,6 +16,14 @@ DEFAULT_MAX_TOKENS = 1024
 
 class LLMError(RuntimeError):
     """Raised when the LLM cannot produce an answer."""
+
+
+@dataclass(frozen=True)
+class LLMResult:
+    text: str
+    model: str
+    input_tokens: int | None = None
+    output_tokens: int | None = None
 
 
 class ClaudeClient:
@@ -60,7 +69,11 @@ class ClaudeClient:
         system_prompt: str,
         user_prompt: str,
         history: list[dict] | None = None,
-    ) -> str:
+        *,
+        temperature: float | None = None,
+        output_schema: dict | None = None,
+        return_metadata: bool = False,
+    ) -> str | LLMResult:
         """Generate one text answer from Claude.
 
         `history` is prior `{"role", "content"}` turns, sent ahead of the current
@@ -71,11 +84,19 @@ class ClaudeClient:
 
         messages = [*(history or []), {"role": "user", "content": user_prompt}]
         try:
+            options = {}
+            if temperature is not None:
+                options["temperature"] = temperature
+            if output_schema is not None:
+                options["output_config"] = {
+                    "format": {"type": "json_schema", "schema": output_schema}
+                }
             response = self._client.messages.create(
                 model=self.model,
                 max_tokens=self.max_tokens,
                 system=system_prompt,
                 messages=messages,
+                **options,
             )
         except Exception as exc:
             raise LLMError(f"Claude API request failed: {exc}") from exc
@@ -88,7 +109,15 @@ class ClaudeClient:
         answer = "\n".join(text_parts).strip()
         if not answer:
             raise LLMError("Claude returned an empty text response")
-        return answer
+        if not return_metadata:
+            return answer
+        usage = getattr(response, "usage", None)
+        return LLMResult(
+            answer,
+            str(getattr(response, "model", self.model)),
+            getattr(usage, "input_tokens", None),
+            getattr(usage, "output_tokens", None),
+        )
 
     def stream(
         self,

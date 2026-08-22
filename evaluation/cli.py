@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from evaluation.ai_assist import generate_question, judge_candidates
+from evaluation.adjudication import run_adjudication
 from evaluation.articles import ArticleCatalog
 from evaluation.assignment import create_assignment, stratum_for_date
 from evaluation.batch_pooling import build_batch_pool, write_pool_artifacts
@@ -27,6 +28,8 @@ DEFAULT_RESULT = PROJECT_ROOT / "evaluation" / "results" / "retrieval_eval.json"
 DEFAULT_BLIND_POOL = PROJECT_ROOT / "evaluation" / "pools" / "blind_pool_50.jsonl"
 DEFAULT_POOL_MAPPING = PROJECT_ROOT / "evaluation" / "pools" / "blind_pool_50_mapping.json"
 DEFAULT_POOL_MANIFEST = PROJECT_ROOT / "evaluation" / "pools" / "blind_pool_50_manifest.json"
+DEFAULT_JUDGMENTS = PROJECT_ROOT / "evaluation" / "judgments"
+DEFAULT_JUDGE_CHECKPOINT = PROJECT_ROOT / "evaluation" / ".checkpoints" / "blind_adjudication"
 
 
 def _retrievers() -> dict:
@@ -42,6 +45,12 @@ def _llm():
     from generation.llm import ClaudeClient
 
     return ClaudeClient()
+
+
+def _judge_llm():
+    from generation.llm import ClaudeClient
+
+    return ClaudeClient(max_tokens=4096)
 
 
 def _print(value) -> None:
@@ -128,6 +137,13 @@ def build_parser() -> argparse.ArgumentParser:
     judge.add_argument("question")
     judge.add_argument("--pool-depth", type=int, default=20)
     judge.add_argument("--chunk-depth", type=int, default=DEFAULT_CHUNK_DEPTH)
+
+    judge_blind = subparsers.add_parser("judge-blind", help="adjudicate a frozen blind packet")
+    judge_blind.add_argument("blind_packet", type=Path)
+    judge_blind.add_argument("--expected-sha256", required=True)
+    judge_blind.add_argument("--output-dir", type=Path, default=DEFAULT_JUDGMENTS)
+    judge_blind.add_argument("--checkpoint-dir", type=Path, default=DEFAULT_JUDGE_CHECKPOINT)
+    judge_blind.add_argument("--seed", type=int, default=42)
 
     combine = subparsers.add_parser("combine", help="validate and combine the two author annotation files")
     combine.add_argument("annotation_files", nargs=2, type=Path)
@@ -232,6 +248,16 @@ def main(argv: list[str] | None = None, *, retriever_factory=None, llm_factory=N
             args.blind_output, args.mapping_output, args.manifest_output,
         )
         print(f"wrote blind pool for {len(records)} queries ({len(mapping)} candidates)")
+        print(json.dumps(hashes, sort_keys=True))
+        return 0
+
+    if args.command == "judge-blind":
+        judge = llm_factory() if llm_factory else _judge_llm()
+        manifest, hashes = run_adjudication(
+            args.blind_packet, args.output_dir, args.checkpoint_dir, judge,
+            expected_sha256=args.expected_sha256, git_commit=_git_commit(), seed=args.seed,
+        )
+        print(f"adjudicated 1299 blind query-candidate pairs in {manifest['api_calls']} API calls")
         print(json.dumps(hashes, sort_keys=True))
         return 0
 
