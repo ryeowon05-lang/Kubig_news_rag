@@ -6,8 +6,10 @@ __pycache__/
 # Jupyter
 .ipynb_checkpoints/
 
-# 크롤러 중간 저장 (재실행 시 이어받기용, 산출물은 data/raw/news_data.json)
+# 수집 원본. 기사 전문이라 공개 리포에 두지 않는다 — preprocessing/crawl.py로
+# 재생성한다. 정제본(news_data_clean.json)은 평가 재현에 필요해 추적한다.
 data/raw/crawl_cache/
+data/raw/news_data.json
 
 # 생성되는 청크/벡터 인덱스와 모델 캐시
 data/processed/news_chunks.jsonl
