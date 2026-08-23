@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Iterator
+from dataclasses import dataclass
 from typing import Any
 
 from dotenv import load_dotenv
@@ -50,6 +51,18 @@ class LLMError(RuntimeError):
     """Raised when the LLM cannot produce an answer."""
 
 
+@dataclass(frozen=True)
+class LLMResult:
+    """An answer plus what the run cost, for callers that record provenance."""
+
+    text: str
+    model: str
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    cached_input_tokens: int | None = None
+    reasoning_tokens: int | None = None
+
+
 class LLMClient:
     """Shared behaviour for every provider adapter.
 
@@ -68,13 +81,24 @@ class LLMClient:
 
     # --- hooks --------------------------------------------------------
 
-    def _create(self, system_prompt: str, messages: list[Any]) -> Any:
+    def _create(
+        self,
+        system_prompt: str,
+        messages: list[Any],
+        *,
+        temperature: float | None = None,
+        output_schema: dict | None = None,
+    ) -> Any:
         raise NotImplementedError
 
     def _open_stream(self, system_prompt: str, messages: list[Any]) -> Iterator[str]:
         raise NotImplementedError
 
     def _extract_text(self, response: Any) -> str:
+        raise NotImplementedError
+
+    def _usage(self, response: Any) -> tuple[int | None, int | None, int | None, int | None]:
+        """(input, output, cached input, reasoning) tokens. Providers name these differently."""
         raise NotImplementedError
 
     def _build_messages(self, system_prompt: str, user_prompt: str, history) -> list[Any]:
@@ -92,23 +116,44 @@ class LLMClient:
         system_prompt: str,
         user_prompt: str,
         history: list[dict] | None = None,
-    ) -> str:
+        *,
+        temperature: float | None = None,
+        output_schema: dict | None = None,
+        return_metadata: bool = False,
+    ) -> str | LLMResult:
         """Generate one text answer.
 
         `history` is prior `{"role", "content"}` turns, sent ahead of the current
         question so follow-ups ("그럼 SK하이닉스는?") have something to refer to.
+
+        `output_schema` constrains the reply to a JSON schema and `return_metadata`
+        swaps the plain string for an `LLMResult` carrying the model that answered
+        and the token counts — both needed by callers that have to record which
+        model produced a result, not just what it said.
         """
         self._guard(system_prompt, user_prompt)
         messages = self._build_messages(system_prompt, user_prompt, history)
         try:
-            response = self._create(system_prompt, messages)
+            response = self._create(
+                system_prompt, messages, temperature=temperature, output_schema=output_schema
+            )
         except Exception as exc:
             raise LLMError(f"{self.label} API request failed: {exc}") from exc
 
         answer = self._extract_text(response).strip()
         if not answer:
             raise LLMError(f"{self.label} returned an empty text response")
-        return answer
+        if not return_metadata:
+            return answer
+        input_tokens, output_tokens, cached, reasoning = self._usage(response)
+        return LLMResult(
+            answer,
+            str(getattr(response, "model", self.model)),
+            input_tokens,
+            output_tokens,
+            cached,
+            reasoning,
+        )
 
     def stream(
         self,
@@ -175,12 +220,27 @@ class ClaudeClient(LLMClient):
 
         self._client = Anthropic(api_key=key)
 
-    def _create(self, system_prompt: str, messages: list[Any]) -> Any:
+    def _create(
+        self,
+        system_prompt: str,
+        messages: list[Any],
+        *,
+        temperature: float | None = None,
+        output_schema: dict | None = None,
+    ) -> Any:
+        options: dict[str, Any] = {}
+        if temperature is not None:
+            options["temperature"] = temperature
+        if output_schema is not None:
+            options["output_config"] = {
+                "format": {"type": "json_schema", "schema": output_schema}
+            }
         return self._client.messages.create(
             model=self.model,
             max_tokens=self.max_tokens,
             system=system_prompt,
             messages=messages,
+            **options,
         )
 
     def _open_stream(self, system_prompt: str, messages: list[Any]) -> Iterator[str]:
@@ -197,6 +257,15 @@ class ClaudeClient(LLMClient):
             block.text
             for block in getattr(response, "content", [])
             if getattr(block, "type", None) == "text" and getattr(block, "text", "")
+        )
+
+    def _usage(self, response: Any):
+        usage = getattr(response, "usage", None)
+        return (
+            getattr(usage, "input_tokens", None),
+            getattr(usage, "output_tokens", None),
+            getattr(usage, "cache_read_input_tokens", None),
+            None,
         )
 
 
@@ -262,8 +331,27 @@ class OpenAIChatClient(LLMClient):
             **extra,
         )
 
-    def _create(self, system_prompt: str, messages: list[Any]) -> Any:
-        return self._request(messages)
+    def _create(
+        self,
+        system_prompt: str,
+        messages: list[Any],
+        *,
+        temperature: float | None = None,
+        output_schema: dict | None = None,
+    ) -> Any:
+        extra: dict[str, Any] = {}
+        if temperature is not None:
+            extra["temperature"] = temperature
+        if output_schema is not None:
+            extra["response_format"] = {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "structured_output",
+                    "strict": True,
+                    "schema": output_schema,
+                },
+            }
+        return self._request(messages, **extra)
 
     def _open_stream(self, system_prompt: str, messages: list[Any]) -> Iterator[str]:
         for chunk in self._request(messages, stream=True):
@@ -277,6 +365,17 @@ class OpenAIChatClient(LLMClient):
         if not choices:
             return ""
         return getattr(choices[0].message, "content", None) or ""
+
+    def _usage(self, response: Any):
+        usage = getattr(response, "usage", None)
+        prompt_details = getattr(usage, "prompt_tokens_details", None)
+        completion_details = getattr(usage, "completion_tokens_details", None)
+        return (
+            getattr(usage, "prompt_tokens", None),
+            getattr(usage, "completion_tokens", None),
+            getattr(prompt_details, "cached_tokens", None),
+            getattr(completion_details, "reasoning_tokens", None),
+        )
 
 
 # --- provider selection ----------------------------------------------------

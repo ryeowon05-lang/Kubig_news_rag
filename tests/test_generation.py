@@ -82,6 +82,31 @@ def test_claude_client_sends_expected_messages():
     assert call["messages"] == [{"role": "user", "content": "user"}]
 
 
+def test_claude_client_optionally_requests_structured_output_and_metadata():
+    fake = FakeClient('{"ok":true}')
+    fake.messages.create = lambda **kwargs: SimpleNamespace(
+        content=[SimpleNamespace(type="text", text='{"ok":true}')],
+        model="claude-actual",
+        usage=SimpleNamespace(input_tokens=12, output_tokens=3),
+        _request=kwargs,
+    )
+    calls = []
+    original = fake.messages.create
+    fake.messages.create = lambda **kwargs: (calls.append(kwargs), original(**kwargs))[1]
+
+    result = ClaudeClient(client=fake, model="configured").generate(
+        "system", "user", temperature=0,
+        output_schema={"type": "object", "properties": {"ok": {"type": "boolean"}}},
+        return_metadata=True,
+    )
+
+    assert result.text == '{"ok":true}'
+    assert result.model == "claude-actual"
+    assert result.input_tokens == 12 and result.output_tokens == 3
+    assert calls[0]["temperature"] == 0
+    assert calls[0]["output_config"]["format"]["type"] == "json_schema"
+
+
 def test_claude_client_raises_on_empty_response():
     fake = FakeClient(answer="")
     client = ClaudeClient(client=fake)
