@@ -138,3 +138,16 @@ def test_judge_blind_default_factory_is_openai(monkeypatch):
     monkeypatch.setattr("generation.openai_llm.OpenAIClient", factory)
     assert cli._judge_llm() is sentinel
     assert captured == {"model": "gpt-5.6-luna", "max_tokens": 512}
+
+
+def test_judge_blind_cli_reports_calls_from_current_invocation(monkeypatch, capsys, tmp_path):
+    import evaluation.cli as cli
+
+    monkeypatch.setattr(cli, "run_adjudication", lambda *args, **kwargs: (
+        {"api_calls_this_invocation": 0}, {"final_sha256": "abc"},
+    ))
+    result = cli.main([
+        "judge-blind", str(tmp_path / "blind.jsonl"), "--expected-sha256", "abc",
+    ], llm_factory=lambda: object())
+    assert result == 0
+    assert "in 0 API calls" in capsys.readouterr().out

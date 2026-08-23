@@ -257,7 +257,10 @@ def main(argv: list[str] | None = None, *, retriever_factory=None, llm_factory=N
             args.blind_packet, args.output_dir, args.checkpoint_dir, judge,
             expected_sha256=args.expected_sha256, git_commit=_git_commit(), seed=args.seed,
         )
-        print(f"adjudicated 1299 blind query-candidate pairs in {manifest['api_calls']} API calls")
+        print(
+            "adjudicated 1299 blind query-candidate pairs in "
+            f"{manifest['api_calls_this_invocation']} API calls this invocation"
+        )
         print(json.dumps(hashes, sort_keys=True))
         return 0
 
