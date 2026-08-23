@@ -4,7 +4,7 @@
 Multi-Query·HyDE 질의 확장과 검색 게이트를 붙인 뒤, 50문항 평가셋으로 Dense와
 Hybrid를 비교했습니다.
 
-**코퍼스** 기사 432건 · 청크 1,377개 · 종목 10개 · 2026-07-31 ~ 08-08
+종목 10개 · 2026-07-31 ~ 08-08
 **모델** 임베딩 `BAAI/bge-m3` · 답변 Anthropic / OpenAI / OpenRouter 중 선택
 
 <details>
@@ -14,23 +14,23 @@ Hybrid를 비교했습니다.
 
 **단일 질문** — 질문 하나에 답변 하나. 검색 설정을 바꿔가며 비교할 때 쓰는 모드 (16초)
 
-<video src="https://github.com/sciencemj/kr_news_rag/raw/main/example_videos/rag_test1.mov" controls width="100%"></video>
+<video src="https://github.com/user-attachments/assets/6c3e5fe4-bf83-49df-ab09-f0f2551b5cd6" controls muted playsinline width="100%"></video>
 
-[내려받기](example_videos/rag_test1.mov)
+[원본 내려받기 (오프라인용)](example_videos/rag_test1.mov)
 
 **출처 먼저, 답변은 스트리밍** — 검색이 먼저 끝나므로 출처 카드가 약 0.15초에 뜨고
 답변은 쓰이는 대로 흘러나옵니다 (27초)
 
-<video src="https://github.com/sciencemj/kr_news_rag/raw/main/example_videos/rag_test2.mov" controls width="100%"></video>
+<video src="https://github.com/user-attachments/assets/be9679df-601d-43ed-894e-a69482eacece" controls muted playsinline width="100%"></video>
 
-[내려받기](example_videos/rag_test2.mov)
+[원본 내려받기 (오프라인용)](example_videos/rag_test2.mov)
 
 **대화 모드 + 검색 게이트** — 이력을 기억해 후속 질문이 되고, 잡담이나 재질문은
 검색을 건너뜁니다 (41초)
 
-<video src="https://github.com/sciencemj/kr_news_rag/raw/main/example_videos/chat_test.mov" controls width="100%"></video>
+<video src="https://github.com/user-attachments/assets/3cd5f04f-5ff8-4dd4-a93b-976d9e1745ae" controls muted playsinline width="100%"></video>
 
-[내려받기](example_videos/chat_test.mov)
+[원본 내려받기 (오프라인용)](example_videos/chat_test.mov)
 
 </details>
 
