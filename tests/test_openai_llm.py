@@ -28,6 +28,7 @@ class FakeClient:
 def test_openai_client_uses_responses_structured_output_and_metadata():
     fake = FakeClient()
     client = OpenAIClient(client=fake, model="test-model", max_tokens=321)
+    assert client.provider == "openai"
     schema = {"type": "object", "properties": {"ok": {"type": "boolean"}}}
 
     result = client.generate(

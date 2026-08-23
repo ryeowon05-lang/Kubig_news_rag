@@ -33,6 +33,8 @@ class ClaudeClient:
     require an API key or an active network connection.
     """
 
+    provider = "anthropic"
+
     def __init__(
         self,
         api_key: str | None = None,

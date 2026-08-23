@@ -18,6 +18,8 @@ DEFAULT_MAX_TOKENS = 1024
 class OpenAIClient:
     """Responses API adapter compatible with the adjudication LLM interface."""
 
+    provider = "openai"
+
     def __init__(self, api_key: str | None = None, model: str | None = None,
                  max_tokens: int = DEFAULT_MAX_TOKENS, client: Any | None = None) -> None:
         if max_tokens < 1:
