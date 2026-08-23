@@ -11,7 +11,7 @@ from generation.llm import LLMError, LLMResult
 
 load_dotenv()
 
-DEFAULT_MODEL = "gpt-5.4-mini"
+DEFAULT_MODEL = "gpt-5.6-luna"
 DEFAULT_MAX_TOKENS = 1024
 
 
@@ -40,7 +40,7 @@ class OpenAIClient:
 
     def generate(self, system_prompt: str, user_prompt: str, history: list[dict] | None = None,
                  *, temperature: float | None = None, output_schema: dict | None = None,
-                 return_metadata: bool = False) -> str | LLMResult:
+                 return_metadata: bool = False, reasoning_effort: str | None = None) -> str | LLMResult:
         if not system_prompt.strip() or not user_prompt.strip():
             raise ValueError("system_prompt and user_prompt cannot be empty")
         if history:
@@ -51,6 +51,8 @@ class OpenAIClient:
         }
         if temperature is not None:
             options["temperature"] = temperature
+        if reasoning_effort is not None:
+            options["reasoning"] = {"effort": reasoning_effort}
         if output_schema is not None:
             options["text"] = {"format": {
                 "type": "json_schema", "name": "structured_output",
@@ -66,6 +68,9 @@ class OpenAIClient:
         if not return_metadata:
             return answer
         usage = getattr(response, "usage", None)
+        input_details = getattr(usage, "input_tokens_details", None)
+        output_details = getattr(usage, "output_tokens_details", None)
         return LLMResult(answer, str(getattr(response, "model", self.model)),
-                         getattr(usage, "input_tokens", None),
-                         getattr(usage, "output_tokens", None))
+                         getattr(usage, "input_tokens", None), getattr(usage, "output_tokens", None),
+                         getattr(input_details, "cached_tokens", None),
+                         getattr(output_details, "reasoning_tokens", None))

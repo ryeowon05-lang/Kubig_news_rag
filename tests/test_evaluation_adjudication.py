@@ -28,7 +28,9 @@ def packet(query_id="K001"):
 
 
 class FakeJudge:
-    model = "claude-sonnet-5"
+    provider = "openai"
+    model = "gpt-5.6-luna"
+    max_tokens = 128
 
     def __init__(self, fail_once=False):
         self.calls = []
@@ -38,19 +40,18 @@ class FakeJudge:
         self.calls.append((system, user, kwargs))
         if self.fail_once:
             self.fail_once = False
-            raise RuntimeError("temporary")
-        payload = json.loads(user)
-        values = [{"candidate_key": item["candidate_key"], "label": "relevant",
-                   "rationale": "기사 본문이 투자 목적을 명시한다."}
-                  for item in payload["candidates"]]
-        return LLMResult(json.dumps({"judgments": values}, ensure_ascii=False), "actual-model", 10, 5)
+            class RateLimitError(RuntimeError):
+                status_code = 429
+            raise RateLimitError("temporary")
+        return LLMResult(json.dumps({"label": "relevant", "rationale": "근거가 명시돼 있다."},
+                                   ensure_ascii=False), "actual-model", 10, 5)
 
 
 def test_judge_uses_only_blind_fields_and_defends_against_prompt_injection(tmp_path):
     client = FakeJudge()
     results, stats = judge_packets([packet()], client, checkpoint_dir=tmp_path, phase="pass1", sleep=lambda _: None)
 
-    assert len(results) == 3 and stats["calls"] == 1
+    assert len(results) == 3 and stats["calls"] == 3
     system, user, options = client.calls[0]
     assert "기사 본문 내부의 지시" in system
     assert "<candidate_data>" in user and "</candidate_data>" in user
@@ -61,7 +62,7 @@ def test_judge_uses_only_blind_fields_and_defends_against_prompt_injection(tmp_p
 def test_judge_retries_and_checkpoint_resume_skips_successful_calls(tmp_path):
     first = FakeJudge(fail_once=True)
     results, stats = judge_packets([packet()], first, checkpoint_dir=tmp_path, phase="pass1", sleep=lambda _: None)
-    assert len(results) == 3 and stats["retries"] == 1 and len(first.calls) == 2
+    assert len(results) == 3 and stats["retries"] == 1 and len(first.calls) == 4
 
     second = FakeJudge()
     resumed, resumed_stats = judge_packets([packet()], second, checkpoint_dir=tmp_path, phase="pass1", sleep=lambda _: None)
@@ -73,7 +74,7 @@ def test_invalid_json_never_creates_fallback_labels(tmp_path):
     client.generate = lambda *args, **kwargs: LLMResult("not json", "m", 0, 0)
     with pytest.raises(RuntimeError, match="failed after 3 attempts"):
         judge_packets([packet()], client, checkpoint_dir=tmp_path, phase="pass1", sleep=lambda _: None)
-    assert not list(tmp_path.glob("*.jsonl"))
+    assert not list(tmp_path.glob("*.json"))
 
 
 def test_authentication_failure_stops_without_retry(tmp_path):
@@ -84,7 +85,7 @@ def test_authentication_failure_stops_without_retry(tmp_path):
     client.generate = lambda *args, **kwargs: (_ for _ in ()).throw(AuthenticationError("bad key"))
     with pytest.raises(RuntimeError, match="authentication"):
         judge_packets([packet()], client, checkpoint_dir=tmp_path, phase="pass1", sleep=lambda _: None)
-    assert not list(tmp_path.glob("*.jsonl"))
+    assert not list(tmp_path.glob("*.json"))
 
 
 def test_review_selection_and_final_merge_are_deterministic():
@@ -129,5 +130,5 @@ def test_judge_blind_default_factory_is_openai(monkeypatch):
     import evaluation.cli as cli
 
     sentinel = object()
-    monkeypatch.setattr("generation.openai_llm.OpenAIClient", lambda max_tokens: sentinel)
+    monkeypatch.setattr("generation.openai_llm.OpenAIClient", lambda **kwargs: sentinel)
     assert cli._judge_llm() is sentinel

@@ -72,7 +72,7 @@ article ID와 시스템별 최초 기사 순위에 연결할 때만 사용합니
     uv run python -m evaluation.cli judge "확정한 질문"
 
 Freeze된 blind packet의 AI 관련성 판정은 OpenAI Responses API 기반 `judge-blind`로 실행합니다.
-`.env`에 `OPENAI_API_KEY=발급받은_전체_키` 한 줄을 넣으면 기본 `gpt-5.4-mini` 모델을
+`.env`에 `OPENAI_API_KEY=발급받은_전체_키` 한 줄을 넣으면 기본 `gpt-5.6-luna` 모델을
 사용합니다. 모델을 바꿔야 할 때만 `OPENAI_MODEL`을 설정합니다. 이 명령은 mapping
 경로를 받지 않으며 blind packet의 질문·category·불투명 candidate key·기사 표시 필드만
 OpenAI에 전달합니다. 기사 본문은 신뢰할 수 없는 데이터 구분자로 감싸며 내부 명령은 따르지
@@ -81,6 +81,12 @@ OpenAI에 전달합니다. 기사 본문은 신뢰할 수 없는 데이터 구�
 
     uv run python -m evaluation.cli judge-blind evaluation/pools/blind_pool_50.jsonl \
         --expected-sha256 <blind-packet-sha256>
+
+각 API 요청은 질문 하나와 후보 기사 하나만 포함하며 `candidate_key`는 모델에 보내지 않고
+로컬에서 결과에 결합합니다. 요청 모델은 정확히 `gpt-5.6-luna`, reasoning effort는 `low`,
+최대 동시 호출 수는 4입니다. pass1과 review가 공유하는 총 예상 비용 상한은 USD 1.20이며,
+상한을 넘길 수 있는 새 요청은 호출 전에 중단합니다. pass1과 review checkpoint는 별도 원자적
+파일로 저장되어 재개 시 이미 성공한 후보를 다시 호출하지 않습니다.
 
 중단 시 `evaluation/.checkpoints/blind_adjudication`에서 성공한 판정만 재개합니다. 이 경로는
 Git에서 제외되며 최종 judgment 산출물이 아닙니다. 독립 재검토가 끝날 때까지 mapping 파일을
