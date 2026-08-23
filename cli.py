@@ -133,9 +133,9 @@ class Loaders:
 
     def llm(self):
         if self._llm is None:
-            from generation.llm import ClaudeClient
+            from generation.llm import get_llm
 
-            self._llm = ClaudeClient()
+            self._llm = get_llm()
         return self._llm
 
 

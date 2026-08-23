@@ -8,10 +8,25 @@ a layout or import error that only surfaces when the script body runs.
 import logging
 from pathlib import Path
 
+import pytest
 from streamlit.testing.v1 import AppTest
 
 # AppTest resolves relative paths against the calling file, not the project root.
 APP = Path(__file__).resolve().parent.parent / "app.py"
+
+
+@pytest.fixture(autouse=True)
+def pinned_provider(monkeypatch):
+    """Pin the provider and key these tests run against.
+
+    The sidebar reads the live environment, which `generation.llm` fills from
+    `.env`. Left alone, what a developer happens to have configured decides what
+    these tests assert: an empty `.env` locks the widgets and a machine set to
+    another provider unlocks them for the wrong reason. Tests that care about a
+    different provider override this.
+    """
+    monkeypatch.setenv("LLM_PROVIDER", "anthropic")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
 
 
 def run_app():
@@ -49,6 +64,28 @@ def test_retrieval_only_is_forced_when_no_api_key_is_configured(monkeypatch):
     assert checkbox.value is True
     assert checkbox.disabled is True
     assert any("ANTHROPIC_API_KEY" in w.value for w in app.sidebar.warning)
+
+
+def test_the_key_check_follows_the_configured_provider(monkeypatch):
+    # A Claude key is useless when LLM_PROVIDER points elsewhere; naming the wrong
+    # variable would send the reader off to fix a key that is already set.
+    monkeypatch.setenv("LLM_PROVIDER", "openai")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    app = run_app()
+
+    assert app.checkbox(key="retrieval_only").disabled is True
+    assert any("OPENAI_API_KEY" in w.value for w in app.sidebar.warning)
+
+
+def test_an_openai_key_unlocks_generation(monkeypatch):
+    monkeypatch.setenv("LLM_PROVIDER", "openai")
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    app = run_app()
+
+    assert app.checkbox(key="retrieval_only").disabled is False
+    assert not app.sidebar.warning
 
 
 def test_no_question_runs_no_retrieval():

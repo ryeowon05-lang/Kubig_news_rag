@@ -7,14 +7,13 @@ Two UI modes over the same pipeline:
 - **대화** — a chat that keeps its history, so follow-ups work. An optional LLM
   gate decides per turn whether the news index is needed at all.
 
-Answers stream as they are written. Retrieval-only skips the Claude call; use it
+Answers stream as they are written. Retrieval-only skips the LLM call; use it
 while tuning retrieval, since every answer costs API credits.
 """
 
 from __future__ import annotations
 
 import logging
-import os
 
 import streamlit as st
 
@@ -26,6 +25,7 @@ import streamlit as st
 # the error and moves on. Only the log is affected, so only the log is fixed.
 logging.getLogger("streamlit.watcher.local_sources_watcher").setLevel(logging.ERROR)
 
+from generation.llm import PROVIDERS, active_provider, api_key_env_var, has_api_key
 from indexing.build_index import DEFAULT_DB
 from indexing.retriever import detect_device
 from rag import RAGPipeline
@@ -68,9 +68,9 @@ def load_hybrid(device: str, candidate_k: int, rrf_k: int):
 
 @st.cache_resource
 def load_llm():
-    from generation.llm import ClaudeClient
+    from generation.llm import get_llm
 
-    return ClaudeClient()
+    return get_llm()
 
 
 @st.cache_resource
@@ -164,7 +164,12 @@ def build_retriever(is_hybrid, resolved_device, candidate_k, rrf_k, expander_nam
 st.title("📰 한국 금융 뉴스 RAG")
 
 with st.sidebar:
-    has_key = bool(os.getenv("ANTHROPIC_API_KEY"))
+    # Which key matters depends on LLM_PROVIDER — a Claude key is no help to an
+    # OpenAI run, and naming the wrong variable sends the reader off to fix the
+    # one that is already set.
+    provider = active_provider()
+    key_var = api_key_env_var(provider) if provider in PROVIDERS else "LLM_PROVIDER"
+    has_key = has_api_key(provider)
 
     st.header("UI 모드")
     ui_mode = st.radio(
@@ -213,7 +218,7 @@ with st.sidebar:
         key="retrieval_only",
         value=not has_key,
         disabled=not has_key or is_chat,
-        help="검색 결과만 봅니다. 답변 생성에는 Claude API 비용이 듭니다.",
+        help="검색 결과만 봅니다. 답변 생성에는 LLM API 비용이 듭니다.",
     )
     if is_chat:
         retrieval_only = False
@@ -229,7 +234,7 @@ with st.sidebar:
         ),
     )
     if not has_key:
-        st.warning("ANTHROPIC_API_KEY가 없어 검색 전용으로 동작합니다.")
+        st.warning(f"{key_var}가 없어 검색 전용으로 동작합니다.")
     if is_chat and st.button("대화 초기화", use_container_width=True):
         st.session_state.chat = []
         st.rerun()

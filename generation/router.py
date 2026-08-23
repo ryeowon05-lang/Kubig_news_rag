@@ -55,9 +55,9 @@ class SearchGate:
 
     def _ensure_llm(self) -> LLM:
         if self._llm is None:
-            from generation.llm import ClaudeClient
+            from generation.llm import get_llm
 
-            self._llm = ClaudeClient(model=self._model) if self._model else ClaudeClient()
+            self._llm = get_llm(model=self._model)
         return self._llm
 
     def needs_search(self, question: str, history: list[dict] | None = None) -> bool:

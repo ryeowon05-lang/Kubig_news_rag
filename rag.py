@@ -7,7 +7,7 @@ from collections.abc import Iterator
 from dataclasses import dataclass, field
 from typing import Any
 
-from generation.llm import ClaudeClient
+from generation.llm import get_llm
 from generation.prompt import build_chat_messages, build_messages
 from indexing.query_preprocess import normalize_query
 
@@ -62,7 +62,7 @@ class RAGPipeline:
             from indexing.retriever import get_retriever
             retriever = get_retriever()
         self.retriever = retriever
-        self.llm = llm or ClaudeClient()
+        self.llm = llm or get_llm()
         # Optional. Without it every turn searches, which is the single-question
         # behaviour; with it, small talk and follow-ups skip retrieval.
         self.gate = gate

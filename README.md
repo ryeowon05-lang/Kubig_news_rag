@@ -14,6 +14,7 @@ Multi-Query·HyDE 질의 확장, Claude 답변 생성, CLI와 Streamlit UI까지
 app.py                              # Streamlit UI
 cli.py                              # 검색 방식·질의 확장·게이트를 비교하는 CLI
 rag.py                              # 검색부터 근거 기반 답변까지 연결하는 RAG 파이프라인
+setup_api.py                        # LLM 프로바이더 API 키·모델을 .env에 설정
 ui_format.py                        # CLI와 UI가 공유하는 출처 표시 형식
 
 preprocessing/                      # 뉴스 수집 및 정제
@@ -76,6 +77,39 @@ uv sync --no-dev # 실행 의존성만 설치
 
 `uv sync`가 `.python-version`에 고정된 Python 3.13을 자동으로 내려받고
 `.venv/`를 만들어 주므로 별도의 `python -m venv`나 `pip install`은 필요 없습니다.
+
+### LLM 프로바이더 설정
+
+답변 생성·질의 확장·검색 게이트는 LLM을 씁니다. Anthropic, OpenAI, OpenRouter를
+지원하며 `LLM_PROVIDER`로 고릅니다. 설정 스크립트가 `.env`까지 만들어 줍니다.
+
+```bash
+uv run python setup_api.py            # 대화형: 프로바이더 → 키 → 모델
+uv run python setup_api.py --check    # 지금 설정이 동작하는지 확인 (아무것도 안 고침)
+```
+
+키는 화면에 보이지 않게 입력받고, 기록 전에 프로바이더의 models 엔드포인트로
+검증합니다. **이 호출은 토큰을 쓰지 않습니다.** 오타난 키나 존재하지 않는 모델 ID를
+첫 질문 전에 잡아냅니다. 기존 `.env`는 덮어쓰지 않고 줄 단위로 병합하므로 다른
+프로바이더 설정과 주석이 그대로 남습니다.
+
+비대화형으로도 됩니다:
+
+```bash
+uv run python setup_api.py --provider openrouter --model vendor/model-name
+```
+
+| 프로바이더 | 키 | 모델 | 비고 |
+| --- | --- | --- | --- |
+| `anthropic` (기본) | `ANTHROPIC_API_KEY` | `CLAUDE_MODEL` | 모델 기본값 `claude-sonnet-5` |
+| `openai` | `OPENAI_API_KEY` | `OPENAI_MODEL` | `OPENAI_BASE_URL`로 호환 게이트웨이 지정 가능 |
+| `openrouter` | `OPENROUTER_API_KEY` | `OPENROUTER_MODEL` | base_url 고정 |
+
+`anthropic` 외에는 모델 기본값이 없습니다. 잘못된 모델 ID를 기본값으로 박아두면
+첫 요청에서야 실패하므로, 설정하지 않으면 시작할 때 바로 알려줍니다.
+
+키가 없어도 검색 기능은 전부 동작합니다 — CLI는 `--retrieval-only`, UI는 검색 전용
+모드로 떨어집니다.
 
 ## 실행
 
@@ -283,14 +317,14 @@ uv run python cli.py "환율 전망" --json                           # 기계 �
 | `--expand` | **`none`** / `multi_query` / `hyde` | 질의 확장, 쉼표로 여러 개 |
 | `--gate` | 플래그 (꺼짐) | 검색이 필요한 질문인지 LLM이 판단 |
 | `--chat` | 플래그 (꺼짐) | 이력을 기억하는 대화 모드 |
-| `--retrieval-only` | 플래그 (꺼짐) | Claude를 호출하지 않음 — **API 키 없이 동작** |
+| `--retrieval-only` | 플래그 (꺼짐) | LLM을 호출하지 않음 — **API 키 없이 동작** |
 | `--top-k` | 정수 (**5**) | 조합마다 가져올 청크 수 |
 | `--candidate-k` | 정수 (**20**) | RRF로 융합하기 전 각 검색기가 뽑는 후보 수 |
 | `--rrf-k` | 정수 (**60**) | RRF 상수 `1/(k+rank)` — 키우면 순위 차이가 완만해집니다 |
 | `--device` | **`auto`** / `cpu` / `cuda` / `mps` | 임베딩 연산 장치 (`auto`는 cuda → mps → cpu 순으로 탐지) |
 | `--json` | 플래그 (꺼짐) | 결과를 JSON으로 출력 (조합별 `runs` 배열) |
 
-인덱스가 없거나 `ANTHROPIC_API_KEY`가 없으면 스택 트레이스 대신 `오류: ...` 한 줄을
+인덱스가 없거나 프로바이더 API 키가 없으면 스택 트레이스 대신 `오류: ...` 한 줄을
 stderr로 내고 종료 코드 1을 돌려줍니다.
 
 출력은 `출처 → 구분선 → 답변` 순입니다.
@@ -396,7 +430,7 @@ uv run streamlit run app.py
   쓰세요. 답변 생성은 질문마다 Claude API 비용이 듭니다
 - 출처 카드마다 `RRF 0.0164 · dense #1 · bm25 —` 형태로 **어느 검색기가 이 청크를
   올렸는지** 표시합니다
-- `ANTHROPIC_API_KEY`가 없으면 검색 전용으로 동작합니다
+- 설정한 프로바이더의 API 키가 없으면 검색 전용으로 동작합니다 (사이드바가 어떤 변수를 채워야 하는지 알려줍니다)
 
 크롤러는 `data/raw/`에, 정제 스크립트는 `data/processed/`에 결과를 씁니다
 (폴더는 자동 생성). 두 코드 모두 `pyproject.toml`이 있는 폴더를 프로젝트
@@ -418,6 +452,7 @@ uv run streamlit run app.py
 | 실행 | `kiwipiepy` | 한국어 형태소 분석 (BM25 토크나이저) |
 | 실행 | `rank-bm25` | BM25 키워드 검색 |
 | 실행 | `anthropic` | Claude API 답변 생성 |
+| 실행 | `openai` | OpenAI·OpenRouter 답변 생성 |
 | 실행 | `streamlit` | 데모 UI |
 | 개발 | `ipykernel` | 주피터 노트북 커널 |
 | 개발 | `pytest` | 자동 테스트 |
