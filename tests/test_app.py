@@ -5,6 +5,7 @@ these stay fast. They catch the failure that matters most in a Streamlit script:
 a layout or import error that only surfaces when the script body runs.
 """
 
+import logging
 from pathlib import Path
 
 from streamlit.testing.v1 import AppTest
@@ -22,6 +23,14 @@ def test_app_renders_without_raising():
 
     assert not app.exception
     assert app.title[0].value.endswith("한국 금융 뉴스 RAG")
+
+
+def test_the_module_watcher_noise_is_silenced():
+    """Streamlit's watcher logs ~95 torchvision tracebacks per rerun without this."""
+    run_app()
+
+    watcher = logging.getLogger("streamlit.watcher.local_sources_watcher")
+    assert watcher.level >= logging.ERROR
 
 
 def test_both_retrieval_modes_are_offered_with_hybrid_first():

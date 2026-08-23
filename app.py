@@ -13,9 +13,18 @@ while tuning retrieval, since every answer costs API credits.
 
 from __future__ import annotations
 
+import logging
 import os
 
 import streamlit as st
+
+# Streamlit's source watcher walks every entry in sys.modules and touches
+# __path__ to decide what to watch. transformers resolves its submodules lazily,
+# so that touch *imports* them — including ~95 image processors that need
+# torchvision, which this project has no use for and does not install. Each one
+# logs a traceback, on every rerun. Nothing actually fails: the watcher catches
+# the error and moves on. Only the log is affected, so only the log is fixed.
+logging.getLogger("streamlit.watcher.local_sources_watcher").setLevel(logging.ERROR)
 
 from indexing.build_index import DEFAULT_DB
 from indexing.retriever import detect_device
