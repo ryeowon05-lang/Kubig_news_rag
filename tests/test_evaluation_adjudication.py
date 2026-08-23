@@ -131,5 +131,10 @@ def test_judge_blind_default_factory_is_openai(monkeypatch):
     import evaluation.cli as cli
 
     sentinel = object()
-    monkeypatch.setattr("generation.openai_llm.OpenAIClient", lambda **kwargs: sentinel)
+    captured = {}
+    def factory(**kwargs):
+        captured.update(kwargs)
+        return sentinel
+    monkeypatch.setattr("generation.openai_llm.OpenAIClient", factory)
     assert cli._judge_llm() is sentinel
+    assert captured == {"model": "gpt-5.6-luna", "max_tokens": 512}

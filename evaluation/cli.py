@@ -50,7 +50,7 @@ def _llm():
 def _judge_llm():
     from generation.openai_llm import OpenAIClient
 
-    return OpenAIClient(model="gpt-5.6-luna", max_tokens=128)
+    return OpenAIClient(model="gpt-5.6-luna", max_tokens=512)
 
 
 def _print(value) -> None:
