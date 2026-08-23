@@ -44,7 +44,7 @@ class FakeJudge:
                 status_code = 429
             raise RateLimitError("temporary")
         return LLMResult(json.dumps({"label": "relevant", "rationale": "근거가 명시돼 있다."},
-                                   ensure_ascii=False), "actual-model", 10, 5)
+                                   ensure_ascii=False), "gpt-5.6-luna", 10, 5)
 
 
 def test_judge_uses_only_blind_fields_and_defends_against_prompt_injection(tmp_path):
@@ -72,7 +72,7 @@ def test_judge_retries_and_checkpoint_resume_skips_successful_calls(tmp_path):
 
 def test_invalid_json_never_creates_fallback_labels(tmp_path):
     client = FakeJudge()
-    client.generate = lambda *args, **kwargs: LLMResult("not json", "m", 0, 0)
+    client.generate = lambda *args, **kwargs: LLMResult("not json", "gpt-5.6-luna", 0, 0)
     with pytest.raises(RuntimeError, match="failed after 3 attempts"):
         judge_packets([packet()], client, checkpoint_dir=tmp_path, phase="pass1", sleep=lambda _: None)
     assert not list(tmp_path.glob("*.json"))

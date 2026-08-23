@@ -35,6 +35,10 @@ class CostBudgetExceeded(RuntimeError):
     pass
 
 
+class ResponseModelMismatch(RuntimeError):
+    pass
+
+
 class CostTracker:
     def __init__(self, limit_usd: float = 1.20):
         self.limit_usd = limit_usd
@@ -190,6 +194,11 @@ def judge_packets(inputs: list[dict], llm, *, checkpoint_dir: Path, phase: str,
                         and getattr(llm, "model", None) == "gpt-5.6-luna"):
                     options["temperature"] = 0
                 response = llm.generate(SYSTEM_PROMPT, payload, **options)
+                if (getattr(llm, "provider", None) == "openai"
+                        and response.model != llm.model):
+                    raise ResponseModelMismatch(
+                        "response model differs from the smoke-tested configured model"
+                    )
                 row = _parse_response(response.text, task)
                 cached = response.cached_input_tokens or 0
                 tracker.settle(reservation, input_tokens=response.input_tokens or 0,
@@ -199,6 +208,8 @@ def judge_packets(inputs: list[dict], llm, *, checkpoint_dir: Path, phase: str,
                 tracker.charge_failed(reservation)
                 if _is_auth_failure(exc):
                     raise RuntimeError(f"{phase} authentication failed; no judgment was fabricated") from exc
+                if isinstance(exc, ResponseModelMismatch):
+                    raise
                 is_schema = isinstance(exc, (ValueError, json.JSONDecodeError))
                 current = exc
                 while current.__cause__ is not None: current = current.__cause__

@@ -34,7 +34,7 @@ class LocalJudge:
         time.sleep((3 - int(candidate["content"].split()[-1])) * .002)
         return LLMResult(
             json.dumps({"label": "relevant", "rationale": "질문의 답을 명시한다."}, ensure_ascii=False),
-            "gpt-5.6-luna-actual", 100, 10, 20, 3,
+            "gpt-5.6-luna", 100, 10, 20, 3,
         )
 
 
@@ -62,6 +62,22 @@ def test_non_openai_judge_keeps_existing_temperature_behavior(tmp_path):
     assert all(call[1]["temperature"] == 0 for call in judge.calls)
 
 
+def test_openai_response_model_mismatch_stops_without_checkpoint(tmp_path):
+    judge = LocalJudge()
+    original = judge.generate
+
+    def mismatched(*args, **kwargs):
+        result = original(*args, **kwargs)
+        return LLMResult(result.text, "different-model", result.input_tokens,
+                         result.output_tokens, result.cached_input_tokens, result.reasoning_tokens)
+
+    judge.generate = mismatched
+    with pytest.raises(RuntimeError, match="response model differs"):
+        judge_packets(packets()[:1], judge, checkpoint_dir=tmp_path, phase="pass1",
+                      concurrency=1, cost_tracker=CostTracker(1.20), sleep=lambda _: None)
+    assert not (tmp_path / "pass1.json").exists()
+
+
 def test_atomic_checkpoint_resume_and_phase_separation(tmp_path):
     first = LocalJudge()
     rows, _ = judge_packets(packets(), first, checkpoint_dir=tmp_path, phase="pass1",
@@ -80,7 +96,7 @@ def test_atomic_checkpoint_resume_and_phase_separation(tmp_path):
 def test_invalid_label_creates_no_fallback(tmp_path):
     judge = LocalJudge()
     judge.generate = lambda *args, **kwargs: LLMResult(
-        json.dumps({"label": "maybe", "rationale": "x"}), "m", 1, 1, 0, 0)
+        json.dumps({"label": "maybe", "rationale": "x"}), "gpt-5.6-luna", 1, 1, 0, 0)
     with pytest.raises(RuntimeError, match="failed after 3 attempts"):
         judge_packets(packets(), judge, checkpoint_dir=tmp_path, phase="pass1", concurrency=1,
                       cost_tracker=CostTracker(1.20), sleep=lambda _: None)
