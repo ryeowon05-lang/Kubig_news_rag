@@ -407,6 +407,42 @@ uv run streamlit run app.py
 크롤러는 네이버 금융에 실제 요청을 보냅니다(요청 간 1초 대기, 총 20~30분 소요).
 이미 수집된 결과가 `data/raw/news_data.json`에 있으므로 재수집은 필요할 때만 하세요.
 
+## Retrieval evaluation 결과
+
+최종 평가는 freeze된 source-seeded 질문 50개를 사용해 Dense와 Hybrid를 같은 질문에서
+paired 방식으로 비교했습니다. 두 시스템의 blind candidate를 합친 뒤 1,299개의 고유
+query–candidate pair에 대해 relevance adjudication을 수행했습니다. Final judgment가
+`relevant`인 기사만 human gold에 추가했으며 `uncertain`은 relevant로 인정하지 않았습니다.
+
+| Metric | Dense | Hybrid | Difference |
+| --- | ---: | ---: | ---: |
+| Hit@1 | 0.7800 | 0.9000 | +0.1200 |
+| Hit@3 | 0.9200 | 0.9600 | +0.0400 |
+| Hit@5 | 0.9200 | 0.9600 | +0.0400 |
+| MRR@5 | 0.8333 | 0.9233 | +0.0900 |
+
+Hybrid는 모든 frozen aggregate metric에서 Dense보다 높았습니다. 가장 큰 개선은 Hit@1과
+MRR@5에서 나타났으며, 이는 Hybrid의 주된 이점이 관련 문서를 top rank로 재정렬하는 데
+있음을 보여줍니다. Hit@5 개선은 `K009`와 `R015` 두 query에서 발생했습니다.
+`multi_aspect`와 `2026-08-07` subgroup에서도 Hybrid가 더 높았지만, subgroup 표본이 작으므로
+이 결과는 탐색적으로만 해석합니다.
+
+이 평가는 query 50개의 소규모 평가이며 source-seeded, AI-assisted 질문과 relevance judgment를
+사용했습니다. Pass1과 review는 동일 모델이 수행했고 독립적인 human cross-review는 없었습니다.
+사전 정의된 confidence interval이나 통계검정도 없으므로, 더 넓은 query 모집단에서 Hybrid가
+통계적으로 우월하다고 일반화할 수 없습니다.
+
+Frozen input과 기존 judgment를 사용해 결과를 다시 생성하는 명령은 다음과 같습니다. 이 명령은
+OpenAI API를 호출하지 않습니다.
+
+```bash
+uv run python -m evaluation.final_evaluation
+```
+
+- [최종 aggregate 및 subgroup metrics](evaluation/results/retrieval_eval_50_metrics.json)
+- [Query별 paired comparison](evaluation/results/retrieval_eval_50_query_comparison.csv)
+- [평가 설정, judgment 진단 및 무결성 manifest](evaluation/results/retrieval_eval_50_manifest.json)
+
 ## 의존성
 
 | 구분 | 패키지 | 용도 |
