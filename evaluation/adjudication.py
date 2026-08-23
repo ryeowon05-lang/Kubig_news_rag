@@ -96,7 +96,14 @@ def _write_checkpoint(path: Path, rows: dict[tuple[str, str], dict]) -> None:
     temporary = path.with_suffix(path.suffix + ".tmp")
     ordered = sorted(rows.values(), key=lambda row: (row["query_id"], row["candidate_key"]))
     temporary.write_text(json.dumps(ordered, ensure_ascii=False, separators=(",", ":")) + "\n", encoding="utf-8")
-    temporary.replace(path)
+    for attempt in range(5):
+        try:
+            temporary.replace(path)
+            break
+        except PermissionError:
+            if attempt == 4:
+                raise
+            time.sleep(0.05 * (2 ** attempt))
 
 
 def _tasks(inputs: list[dict]) -> list[CandidateTask]:

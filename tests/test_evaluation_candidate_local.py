@@ -1,9 +1,10 @@
 import json
 import time
+from pathlib import Path
 
 import pytest
 
-from evaluation.adjudication import CostBudgetExceeded, CostTracker, judge_packets
+from evaluation.adjudication import CostBudgetExceeded, CostTracker, _write_checkpoint, judge_packets
 from generation.llm import LLMResult
 
 
@@ -109,3 +110,24 @@ def test_cost_cap_stops_before_new_request(tmp_path):
         judge_packets(packets(), judge, checkpoint_dir=tmp_path, phase="pass1", concurrency=1,
                       cost_tracker=CostTracker(0.000001), sleep=lambda _: None)
     assert not judge.calls
+
+
+def test_atomic_checkpoint_retries_transient_windows_file_lock(tmp_path, monkeypatch):
+    original = Path.replace
+    attempts = 0
+
+    def flaky_replace(self, target):
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise PermissionError(5, "transient file lock")
+        return original(self, target)
+
+    monkeypatch.setattr(Path, "replace", flaky_replace)
+    rows = {("K001", "opaque-0"): {
+        "query_id": "K001", "candidate_key": "opaque-0",
+        "label": "relevant", "rationale": "근거",
+    }}
+    _write_checkpoint(tmp_path / "pass1.json", rows)
+    assert attempts == 2
+    assert json.loads((tmp_path / "pass1.json").read_text(encoding="utf-8"))[0]["candidate_key"] == "opaque-0"
