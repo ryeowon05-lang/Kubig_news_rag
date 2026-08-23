@@ -1,0 +1,456 @@
+{
+  "execution_git_commit": "a19c35d90aabab5e23534f8ab07a44ea2c1f4776",
+  "source_sha256": {
+    "freeze_sha256": "fee480d1566c85eb292245abbf4c4a00c53ee67dab6210411b233ac8726e4fd9",
+    "blind_pool_sha256": "d2747e33c9ed96ac2b50ad9d5c4fd0147b9a5e6743212a06b2d88ea027630edc",
+    "mapping_sha256": "10e7d297960116a85f01a43cb2f1a7ccd9a1c5b692c777638aa8a11aa13488fa",
+    "pool_manifest_sha256": "db28af4345d868292d658dd9a252226a744b65a3161dcf0a2cb030c5be3b7486",
+    "annotation_kahyun_sha256": "d013fd81366ded74cdfd99f09a51720f4674091c98260edce99e773b1113e10d",
+    "annotation_ryeowon_sha256": "4fb203904838b2f69418d34bbe0219b3ff6de2291af5f030a46a6c61d0f29203",
+    "pass1_sha256": "9604d23c11e259ab9660947c641ee14c9ccda48be5bf0aa8c88d97995f646ee8",
+    "review_sha256": "31d12041f0efa15eeb97bacca17abae85ddbf7a10e7a64216d1c47946e5c4e30",
+    "final_judgment_sha256": "16f3d452ce6a35dcfae14d09f61adfb71cbd779b53cfa6ccd9caca9a56b3f259",
+    "judgment_manifest_sha256": "17c06e8a2dbea445e692fea3630698ea0906306df3d4ad056cf656714846e660"
+  },
+  "rules": {
+    "metrics": [
+      "hit_at_1",
+      "hit_at_3",
+      "hit_at_5",
+      "mrr_at_5"
+    ],
+    "article_cutoff": 5,
+    "candidate_pool_depth": 20,
+    "aggregation": "unweighted mean across the same 50 paired queries",
+    "tie_handling": "equal per-query metric values are ties",
+    "gold_merge": "human gold union final LLM relevant judgments",
+    "uncertain_handling": "retained in diagnostics and excluded from final gold",
+    "confidence_interval": null,
+    "statistical_test": null,
+    "reason_no_inference": "No confidence interval, test, bootstrap seed, or iteration count was predefined."
+  },
+  "integrity": {
+    "query_count": 50,
+    "mapping_row_count": 1299,
+    "judgment_row_count": 1299,
+    "merged_row_count": 1299,
+    "unique_candidate_key_count": 1299,
+    "missing_judgment_count": 0,
+    "missing_mapping_count": 0,
+    "duplicate_mapping_key_count": 0,
+    "duplicate_judgment_key_count": 0,
+    "duplicate_article_within_query_count": 0,
+    "system_candidate_counts": {
+      "dense": 1000,
+      "hybrid": 1000
+    },
+    "query_candidate_count_min_max": {
+      "dense": [
+        20,
+        20
+      ],
+      "hybrid": [
+        20,
+        20
+      ]
+    },
+    "metric_input_key_set_matches_final_judgment": true,
+    "forbidden_blind_leakage_fields_present": false,
+    "freeze_unchanged": true
+  },
+  "judgment_diagnostics": {
+    "pass1_label_counts": {
+      "relevant": 292,
+      "not_relevant": 993,
+      "uncertain": 14
+    },
+    "review_target_pass1_label_counts": {
+      "relevant": 292,
+      "not_relevant": 99,
+      "uncertain": 14
+    },
+    "review_label_counts": {
+      "relevant": 291,
+      "not_relevant": 107,
+      "uncertain": 7
+    },
+    "review_changed_count": 22,
+    "review_transition_table": {
+      "relevant": {
+        "relevant": 284,
+        "not_relevant": 5,
+        "uncertain": 3
+      },
+      "not_relevant": {
+        "relevant": 0,
+        "not_relevant": 97,
+        "uncertain": 2
+      },
+      "uncertain": {
+        "relevant": 7,
+        "not_relevant": 5,
+        "uncertain": 2
+      }
+    },
+    "final_label_counts": {
+      "relevant": 284,
+      "not_relevant": 991,
+      "uncertain": 24
+    },
+    "human_gold_and_llm_overlap_count": 50,
+    "human_gold_llm_label_counts": {
+      "relevant": 50,
+      "not_relevant": 0,
+      "uncertain": 0
+    },
+    "human_gold_llm_relevant_agreement_rate": 1.0,
+    "agreement_statistic": null,
+    "agreement_statistic_note": "No additional agreement statistic was predefined; same-model review is not human validation."
+  },
+  "metrics": {
+    "overall": {
+      "question_count": 50,
+      "dense": {
+        "hit_at_1": 0.78,
+        "hit_at_3": 0.92,
+        "hit_at_5": 0.92,
+        "mrr_at_5": 0.8333333333333333
+      },
+      "hybrid": {
+        "hit_at_1": 0.9,
+        "hit_at_3": 0.96,
+        "hit_at_5": 0.96,
+        "mrr_at_5": 0.9233333333333333
+      },
+      "differences": {
+        "hit_at_1": {
+          "absolute_hybrid_minus_dense": 0.12,
+          "relative_hybrid_vs_dense": 0.15384615384615383
+        },
+        "hit_at_3": {
+          "absolute_hybrid_minus_dense": 0.039999999999999925,
+          "relative_hybrid_vs_dense": 0.04347826086956513
+        },
+        "hit_at_5": {
+          "absolute_hybrid_minus_dense": 0.039999999999999925,
+          "relative_hybrid_vs_dense": 0.04347826086956513
+        },
+        "mrr_at_5": {
+          "absolute_hybrid_minus_dense": 0.09000000000000008,
+          "relative_hybrid_vs_dense": 0.10800000000000011
+        }
+      }
+    },
+    "by_date_stratum": {
+      "2026-07-31_to_2026-08-05": {
+        "question_count": 10,
+        "dense": {
+          "hit_at_1": 0.6,
+          "hit_at_3": 0.8,
+          "hit_at_5": 0.8,
+          "mrr_at_5": 0.6833333333333333
+        },
+        "hybrid": {
+          "hit_at_1": 0.7,
+          "hit_at_3": 0.8,
+          "hit_at_5": 0.8,
+          "mrr_at_5": 0.75
+        },
+        "differences": {
+          "hit_at_1": {
+            "absolute_hybrid_minus_dense": 0.09999999999999998,
+            "relative_hybrid_vs_dense": 0.16666666666666663
+          },
+          "hit_at_3": {
+            "absolute_hybrid_minus_dense": 0.0,
+            "relative_hybrid_vs_dense": 0.0
+          },
+          "hit_at_5": {
+            "absolute_hybrid_minus_dense": 0.0,
+            "relative_hybrid_vs_dense": 0.0
+          },
+          "mrr_at_5": {
+            "absolute_hybrid_minus_dense": 0.06666666666666665,
+            "relative_hybrid_vs_dense": 0.09756097560975607
+          }
+        }
+      },
+      "2026-08-06": {
+        "question_count": 10,
+        "dense": {
+          "hit_at_1": 0.9,
+          "hit_at_3": 0.9,
+          "hit_at_5": 0.9,
+          "mrr_at_5": 0.9
+        },
+        "hybrid": {
+          "hit_at_1": 0.9,
+          "hit_at_3": 1.0,
+          "hit_at_5": 1.0,
+          "mrr_at_5": 0.9333333333333333
+        },
+        "differences": {
+          "hit_at_1": {
+            "absolute_hybrid_minus_dense": 0.0,
+            "relative_hybrid_vs_dense": 0.0
+          },
+          "hit_at_3": {
+            "absolute_hybrid_minus_dense": 0.09999999999999998,
+            "relative_hybrid_vs_dense": 0.11111111111111108
+          },
+          "hit_at_5": {
+            "absolute_hybrid_minus_dense": 0.09999999999999998,
+            "relative_hybrid_vs_dense": 0.11111111111111108
+          },
+          "mrr_at_5": {
+            "absolute_hybrid_minus_dense": 0.033333333333333326,
+            "relative_hybrid_vs_dense": 0.03703703703703703
+          }
+        }
+      },
+      "2026-08-07": {
+        "question_count": 18,
+        "dense": {
+          "hit_at_1": 0.7222222222222222,
+          "hit_at_3": 0.9444444444444444,
+          "hit_at_5": 0.9444444444444444,
+          "mrr_at_5": 0.8055555555555556
+        },
+        "hybrid": {
+          "hit_at_1": 1.0,
+          "hit_at_3": 1.0,
+          "hit_at_5": 1.0,
+          "mrr_at_5": 1.0
+        },
+        "differences": {
+          "hit_at_1": {
+            "absolute_hybrid_minus_dense": 0.2777777777777778,
+            "relative_hybrid_vs_dense": 0.38461538461538464
+          },
+          "hit_at_3": {
+            "absolute_hybrid_minus_dense": 0.05555555555555558,
+            "relative_hybrid_vs_dense": 0.05882352941176473
+          },
+          "hit_at_5": {
+            "absolute_hybrid_minus_dense": 0.05555555555555558,
+            "relative_hybrid_vs_dense": 0.05882352941176473
+          },
+          "mrr_at_5": {
+            "absolute_hybrid_minus_dense": 0.19444444444444442,
+            "relative_hybrid_vs_dense": 0.24137931034482754
+          }
+        }
+      },
+      "2026-08-08": {
+        "question_count": 12,
+        "dense": {
+          "hit_at_1": 0.9166666666666666,
+          "hit_at_3": 1.0,
+          "hit_at_5": 1.0,
+          "mrr_at_5": 0.9444444444444445
+        },
+        "hybrid": {
+          "hit_at_1": 0.9166666666666666,
+          "hit_at_3": 1.0,
+          "hit_at_5": 1.0,
+          "mrr_at_5": 0.9444444444444445
+        },
+        "differences": {
+          "hit_at_1": {
+            "absolute_hybrid_minus_dense": 0.0,
+            "relative_hybrid_vs_dense": 0.0
+          },
+          "hit_at_3": {
+            "absolute_hybrid_minus_dense": 0.0,
+            "relative_hybrid_vs_dense": 0.0
+          },
+          "hit_at_5": {
+            "absolute_hybrid_minus_dense": 0.0,
+            "relative_hybrid_vs_dense": 0.0
+          },
+          "mrr_at_5": {
+            "absolute_hybrid_minus_dense": 0.0,
+            "relative_hybrid_vs_dense": 0.0
+          }
+        }
+      }
+    },
+    "by_category": {
+      "abstract": {
+        "question_count": 13,
+        "dense": {
+          "hit_at_1": 0.7692307692307693,
+          "hit_at_3": 0.8461538461538461,
+          "hit_at_5": 0.8461538461538461,
+          "mrr_at_5": 0.7948717948717949
+        },
+        "hybrid": {
+          "hit_at_1": 0.8461538461538461,
+          "hit_at_3": 0.8461538461538461,
+          "hit_at_5": 0.8461538461538461,
+          "mrr_at_5": 0.8461538461538461
+        },
+        "differences": {
+          "hit_at_1": {
+            "absolute_hybrid_minus_dense": 0.07692307692307687,
+            "relative_hybrid_vs_dense": 0.09999999999999992
+          },
+          "hit_at_3": {
+            "absolute_hybrid_minus_dense": 0.0,
+            "relative_hybrid_vs_dense": 0.0
+          },
+          "hit_at_5": {
+            "absolute_hybrid_minus_dense": 0.0,
+            "relative_hybrid_vs_dense": 0.0
+          },
+          "mrr_at_5": {
+            "absolute_hybrid_minus_dense": 0.05128205128205121,
+            "relative_hybrid_vs_dense": 0.06451612903225797
+          }
+        }
+      },
+      "exact_token": {
+        "question_count": 13,
+        "dense": {
+          "hit_at_1": 0.6153846153846154,
+          "hit_at_3": 1.0,
+          "hit_at_5": 1.0,
+          "mrr_at_5": 0.7692307692307693
+        },
+        "hybrid": {
+          "hit_at_1": 0.7692307692307693,
+          "hit_at_3": 1.0,
+          "hit_at_5": 1.0,
+          "mrr_at_5": 0.8589743589743589
+        },
+        "differences": {
+          "hit_at_1": {
+            "absolute_hybrid_minus_dense": 0.15384615384615385,
+            "relative_hybrid_vs_dense": 0.25
+          },
+          "hit_at_3": {
+            "absolute_hybrid_minus_dense": 0.0,
+            "relative_hybrid_vs_dense": 0.0
+          },
+          "hit_at_5": {
+            "absolute_hybrid_minus_dense": 0.0,
+            "relative_hybrid_vs_dense": 0.0
+          },
+          "mrr_at_5": {
+            "absolute_hybrid_minus_dense": 0.08974358974358965,
+            "relative_hybrid_vs_dense": 0.11666666666666653
+          }
+        }
+      },
+      "factoid": {
+        "question_count": 12,
+        "dense": {
+          "hit_at_1": 1.0,
+          "hit_at_3": 1.0,
+          "hit_at_5": 1.0,
+          "mrr_at_5": 1.0
+        },
+        "hybrid": {
+          "hit_at_1": 1.0,
+          "hit_at_3": 1.0,
+          "hit_at_5": 1.0,
+          "mrr_at_5": 1.0
+        },
+        "differences": {
+          "hit_at_1": {
+            "absolute_hybrid_minus_dense": 0.0,
+            "relative_hybrid_vs_dense": 0.0
+          },
+          "hit_at_3": {
+            "absolute_hybrid_minus_dense": 0.0,
+            "relative_hybrid_vs_dense": 0.0
+          },
+          "hit_at_5": {
+            "absolute_hybrid_minus_dense": 0.0,
+            "relative_hybrid_vs_dense": 0.0
+          },
+          "mrr_at_5": {
+            "absolute_hybrid_minus_dense": 0.0,
+            "relative_hybrid_vs_dense": 0.0
+          }
+        }
+      },
+      "multi_aspect": {
+        "question_count": 12,
+        "dense": {
+          "hit_at_1": 0.75,
+          "hit_at_3": 0.8333333333333334,
+          "hit_at_5": 0.8333333333333334,
+          "mrr_at_5": 0.7777777777777778
+        },
+        "hybrid": {
+          "hit_at_1": 1.0,
+          "hit_at_3": 1.0,
+          "hit_at_5": 1.0,
+          "mrr_at_5": 1.0
+        },
+        "differences": {
+          "hit_at_1": {
+            "absolute_hybrid_minus_dense": 0.25,
+            "relative_hybrid_vs_dense": 0.3333333333333333
+          },
+          "hit_at_3": {
+            "absolute_hybrid_minus_dense": 0.16666666666666663,
+            "relative_hybrid_vs_dense": 0.19999999999999996
+          },
+          "hit_at_5": {
+            "absolute_hybrid_minus_dense": 0.16666666666666663,
+            "relative_hybrid_vs_dense": 0.19999999999999996
+          },
+          "mrr_at_5": {
+            "absolute_hybrid_minus_dense": 0.2222222222222222,
+            "relative_hybrid_vs_dense": 0.2857142857142857
+          }
+        }
+      }
+    },
+    "paired_outcomes": {
+      "hit_at_1": {
+        "tie": 42,
+        "hybrid_win": 7,
+        "dense_win": 1
+      },
+      "hit_at_3": {
+        "tie": 48,
+        "hybrid_win": 2
+      },
+      "hit_at_5": {
+        "tie": 48,
+        "hybrid_win": 2
+      },
+      "mrr_at_5": {
+        "tie": 41,
+        "hybrid_win": 8,
+        "dense_win": 1
+      }
+    }
+  },
+  "major_failure_queries": {
+    "both_miss_at_5": [
+      "K003",
+      "R003"
+    ],
+    "dense_only_hit_at_5": [],
+    "hybrid_only_hit_at_5": [
+      "K009",
+      "R015"
+    ]
+  },
+  "limitations": [
+    "Questions were AI-assisted and self-checked by one annotator without independent cross-review.",
+    "Pass1 and review used the same model, so review is not independent human validation.",
+    "Uncertain judgments are not treated as relevant and remain unresolved diagnostic cases.",
+    "The sample contains 50 source-seeded queries; subgroup results are exploratory.",
+    "No inferential procedure was predefined, so confidence intervals and p-values are intentionally omitted."
+  ],
+  "generated_file_sha256": {
+    "unblinded_sha256": "e938a9a24326d024a762f9495deab28d1b74be27e94b3210a0911d70d64d82ae",
+    "metrics_sha256": "54da6a7bd959f3fe97be6762930cd3653e73b6264ac9a13648380aa306e19831",
+    "queries_sha256": "2574534fadd9fab14a72ec9eb2dcc8c567e34d61cabebb5fba5cf2af35b3870e"
+  }
+}
