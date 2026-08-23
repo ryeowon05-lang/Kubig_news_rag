@@ -47,9 +47,19 @@ def test_candidate_local_schema_local_key_binding_and_original_order(tmp_path):
     assert [row["candidate_key"] for row in rows] == [f"opaque-{i}" for i in range(4)]
     assert all("candidate_key" not in call[0] for call in judge.calls)
     assert all("candidate_key" not in call[1]["output_schema"]["properties"] for call in judge.calls)
+    assert all("temperature" not in call[1] for call in judge.calls)
     assert all(call[1]["reasoning_effort"] == "low" for call in judge.calls)
     assert stats["input_tokens"] == 400 and stats["cached_input_tokens"] == 80
     assert stats["output_tokens"] == 40 and stats["reasoning_tokens"] == 12
+
+
+def test_non_openai_judge_keeps_existing_temperature_behavior(tmp_path):
+    judge = LocalJudge()
+    judge.provider = "anthropic"
+    judge.model = "claude-sonnet-5"
+    judge_packets(packets()[:1], judge, checkpoint_dir=tmp_path, phase="pass1",
+                  concurrency=1, cost_tracker=CostTracker(1.20), sleep=lambda _: None)
+    assert all(call[1]["temperature"] == 0 for call in judge.calls)
 
 
 def test_atomic_checkpoint_resume_and_phase_separation(tmp_path):

@@ -184,8 +184,12 @@ def judge_packets(inputs: list[dict], llm, *, checkpoint_dir: Path, phase: str,
             reservation = tracker.reserve(estimated_input_tokens, max_output_tokens)
             try:
                 with stats_lock: stats["calls"] += 1
-                response = llm.generate(SYSTEM_PROMPT, payload, temperature=0, output_schema=OUTPUT_SCHEMA,
-                                        return_metadata=True, reasoning_effort="low")
+                options = {"output_schema": OUTPUT_SCHEMA, "return_metadata": True,
+                           "reasoning_effort": "low"}
+                if not (getattr(llm, "provider", None) == "openai"
+                        and getattr(llm, "model", None) == "gpt-5.6-luna"):
+                    options["temperature"] = 0
+                response = llm.generate(SYSTEM_PROMPT, payload, **options)
                 row = _parse_response(response.text, task)
                 cached = response.cached_input_tokens or 0
                 tracker.settle(reservation, input_tokens=response.input_tokens or 0,

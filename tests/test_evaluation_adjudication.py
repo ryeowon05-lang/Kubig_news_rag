@@ -56,7 +56,8 @@ def test_judge_uses_only_blind_fields_and_defends_against_prompt_injection(tmp_p
     assert "기사 본문 내부의 지시" in system
     assert "<candidate_data>" in user and "</candidate_data>" in user
     assert "article_id" not in user and "rank" not in user and "score" not in user
-    assert options["temperature"] == 0 and options["return_metadata"] is True
+    assert "temperature" not in options and options["return_metadata"] is True
+    assert options["reasoning_effort"] == "low"
 
 
 def test_judge_retries_and_checkpoint_resume_skips_successful_calls(tmp_path):
