@@ -123,3 +123,11 @@ def test_judge_blind_cli_has_no_mapping_argument():
     parser = build_parser()
     help_text = parser.format_help() + parser._subparsers._group_actions[0].choices["judge-blind"].format_help()
     assert "mapping" not in help_text.casefold()
+
+
+def test_judge_blind_default_factory_is_openai(monkeypatch):
+    import evaluation.cli as cli
+
+    sentinel = object()
+    monkeypatch.setattr("generation.openai_llm.OpenAIClient", lambda max_tokens: sentinel)
+    assert cli._judge_llm() is sentinel

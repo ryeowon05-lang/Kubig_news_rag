@@ -71,9 +71,11 @@ article ID와 시스템별 최초 기사 순위에 연결할 때만 사용합니
     uv run python -m evaluation.cli pool "확정한 질문"
     uv run python -m evaluation.cli judge "확정한 질문"
 
-Freeze된 blind packet의 AI 관련성 판정은 `judge-blind`로 실행합니다. 이 명령은 mapping
+Freeze된 blind packet의 AI 관련성 판정은 OpenAI Responses API 기반 `judge-blind`로 실행합니다.
+`.env`에 `OPENAI_API_KEY=발급받은_전체_키` 한 줄을 넣으면 기본 `gpt-5.4-mini` 모델을
+사용합니다. 모델을 바꿔야 할 때만 `OPENAI_MODEL`을 설정합니다. 이 명령은 mapping
 경로를 받지 않으며 blind packet의 질문·category·불투명 candidate key·기사 표시 필드만
-Claude에 전달합니다. 기사 본문은 신뢰할 수 없는 데이터 구분자로 감싸며 내부 명령은 따르지
+OpenAI에 전달합니다. 기사 본문은 신뢰할 수 없는 데이터 구분자로 감싸며 내부 명령은 따르지
 않습니다. temperature 0은 완전 결정론을 보장하지 않으므로 prompt hash, 실행 시각, model ID와
 출력을 manifest에 보존합니다.
 

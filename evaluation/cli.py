@@ -48,9 +48,9 @@ def _llm():
 
 
 def _judge_llm():
-    from generation.llm import ClaudeClient
+    from generation.openai_llm import OpenAIClient
 
-    return ClaudeClient(max_tokens=4096)
+    return OpenAIClient(max_tokens=4096)
 
 
 def _print(value) -> None:
