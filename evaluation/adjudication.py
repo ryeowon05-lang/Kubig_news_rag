@@ -305,6 +305,22 @@ def label_counts(rows: list[dict], field: str) -> dict[str, int]:
     return {label: counts.get(label, 0) for label in sorted(LABELS)}
 
 
+def _resumed_run_metadata(*, configured_model: str, successful_judgments: int,
+                          calls_this_invocation: int, checkpoint_hits: int,
+                          response_models: dict[str, int]) -> dict:
+    successful_models = Counter(response_models)
+    if checkpoint_hits:
+        successful_models[configured_model] += checkpoint_hits
+    complete = checkpoint_hits == 0
+    return {
+        "api_calls_this_invocation": calls_this_invocation,
+        "minimum_successful_api_calls": successful_judgments,
+        "api_calls_total": calls_this_invocation if complete else None,
+        "api_calls_total_complete": complete,
+        "successful_response_model_ids": dict(successful_models),
+    }
+
+
 def _jsonl_bytes(rows: list[dict]) -> bytes:
     return "".join(json.dumps(row, ensure_ascii=False, separators=(",", ":")) + "\n" for row in rows).encode()
 
@@ -348,6 +364,13 @@ def run_adjudication(packet_path: Path, output_dir: Path, checkpoint_dir: Path, 
     hashes = {f"{name}_sha256": hashlib.sha256(value).hexdigest() for name, value in payloads.items()}
     models = Counter(pass1_stats["response_models"])
     models.update(review_stats["response_models"])
+    calls_this_invocation = pass1_stats["calls"] + review_stats["calls"]
+    checkpoint_hits = pass1_stats["checkpoint_hits"] + review_stats["checkpoint_hits"]
+    run_metadata = _resumed_run_metadata(
+        configured_model=llm.model, successful_judgments=len(pass1) + len(review),
+        calls_this_invocation=calls_this_invocation, checkpoint_hits=checkpoint_hits,
+        response_models=dict(models),
+    )
     disagreement = sum(1 for row in final if row["reviewed"] and row["final_label"] == "uncertain"
                        and row["pass1_label"] != row["review_label"])
     manifest = {
@@ -356,7 +379,7 @@ def run_adjudication(packet_path: Path, output_dir: Path, checkpoint_dir: Path, 
         "prompt": SYSTEM_PROMPT,
         "judge_provider": llm.provider,
         "configured_model_id": llm.model,
-        "response_model_ids": dict(models),
+        "response_model_ids": run_metadata["successful_response_model_ids"],
         "temperature": 0,
         "reasoning_effort": "low",
         "cost_limit_usd": cost_tracker.limit_usd,
@@ -365,14 +388,15 @@ def run_adjudication(packet_path: Path, output_dir: Path, checkpoint_dir: Path, 
         "random_seed": seed,
         "started_at": datetime.now(timezone.utc).isoformat(),
         "processing_seconds": round(time.monotonic() - started, 3),
-        "api_calls": pass1_stats["calls"] + review_stats["calls"],
+        **run_metadata,
         "retries": pass1_stats["retries"] + review_stats["retries"],
         "errors": pass1_stats["errors"] + review_stats["errors"],
-        "checkpoint_hits": pass1_stats["checkpoint_hits"] + review_stats["checkpoint_hits"],
-        "token_usage": {"input": pass1_stats["input_tokens"] + review_stats["input_tokens"],
+        "checkpoint_hits": checkpoint_hits,
+        "token_usage_this_invocation": {"input": pass1_stats["input_tokens"] + review_stats["input_tokens"],
                         "cached_input": pass1_stats["cached_input_tokens"] + review_stats["cached_input_tokens"],
                         "output": pass1_stats["output_tokens"] + review_stats["output_tokens"],
                         "reasoning": pass1_stats["reasoning_tokens"] + review_stats["reasoning_tokens"]},
+        "token_usage_total_complete": checkpoint_hits == 0,
         "pass1_label_counts": label_counts(pass1, "label"),
         "review_count": len(review),
         "review_disagreement_count": disagreement,

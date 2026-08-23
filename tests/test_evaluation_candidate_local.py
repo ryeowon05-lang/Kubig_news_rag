@@ -4,7 +4,9 @@ from pathlib import Path
 
 import pytest
 
-from evaluation.adjudication import CostBudgetExceeded, CostTracker, _write_checkpoint, judge_packets
+from evaluation.adjudication import (
+    CostBudgetExceeded, CostTracker, _resumed_run_metadata, _write_checkpoint, judge_packets,
+)
 from generation.llm import LLMResult
 
 
@@ -131,3 +133,15 @@ def test_atomic_checkpoint_retries_transient_windows_file_lock(tmp_path, monkeyp
     _write_checkpoint(tmp_path / "pass1.json", rows)
     assert attempts == 2
     assert json.loads((tmp_path / "pass1.json").read_text(encoding="utf-8"))[0]["candidate_key"] == "opaque-0"
+
+
+def test_resumed_manifest_does_not_misreport_zero_as_total_api_calls():
+    fields = _resumed_run_metadata(
+        configured_model="gpt-5.6-luna", successful_judgments=1704,
+        calls_this_invocation=0, checkpoint_hits=1704, response_models={},
+    )
+    assert fields["api_calls_this_invocation"] == 0
+    assert fields["minimum_successful_api_calls"] == 1704
+    assert fields["api_calls_total"] is None
+    assert fields["api_calls_total_complete"] is False
+    assert fields["successful_response_model_ids"] == {"gpt-5.6-luna": 1704}
