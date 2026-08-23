@@ -24,7 +24,11 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR OTHER DEALINGS IN THE SOFTWARE.
 Scope
 
 This license covers the source code, tests, and documentation in this
-repository. It does not cover the news content collected under `data/`, which
-was crawled from Naver Finance and remains the property of its respective
-publishers. That material is included for research and evaluation only and is
-not redistributed under the terms above.
+repository.
+
+News article bodies are not distributed here. They are collected by running
+`preprocessing/crawl.py` against Naver Finance and remain the property of their
+respective publishers. The evaluation files retain article titles and the one
+or two sentences quoted as grounds for each relevance judgment, without which
+the evaluation set cannot be read; those excerpts are included for research
+purposes and are not licensed under the terms above.

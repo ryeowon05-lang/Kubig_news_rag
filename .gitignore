@@ -6,10 +6,14 @@ __pycache__/
 # Jupyter
 .ipynb_checkpoints/
 
-# 수집 원본. 기사 전문이라 공개 리포에 두지 않는다 — preprocessing/crawl.py로
-# 재생성한다. 정제본(news_data_clean.json)은 평가 재현에 필요해 추적한다.
+# 기사 전문은 공개 리포에 두지 않는다. 저작권이 각 언론사에 있고 재배포가 되므로,
+# preprocessing/crawl.py → clean.py 로 각자 수집한다.
 data/raw/crawl_cache/
 data/raw/news_data.json
+data/processed/news_data_clean.json
+
+# 정제본 + mapping 에서 바이트 단위로 재생성되는 파생물 (evaluation/rebuild_pool.py)
+evaluation/pools/blind_pool_50.jsonl
 
 # 생성되는 청크/벡터 인덱스와 모델 캐시
 data/processed/news_chunks.jsonl

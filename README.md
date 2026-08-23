@@ -36,12 +36,10 @@ Hybrid를 비교했습니다.
 
 </details>
 
-> **데이터에 관하여** — 이 저장소의 `data/`와 `evaluation/pools/`에는 네이버 금융에서
-> 2026년 8월에 수집한 뉴스 기사 본문이 들어 있습니다. 저작권은 각 언론사에 있으며
-> 검색 평가를 재현할 수 있게 하려는 목적으로만 포함했습니다. 상업적 이용이나 재배포를
-> 위한 데이터셋이 아닙니다. 코드 라이선스([MIT](LICENSE))는 이 자료에 적용되지 않습니다.
-> 수집 원본(`data/raw/news_data.json`)은 추적하지 않으며 `preprocessing/crawl.py`로
-> 다시 만듭니다.
+> **데이터에 관하여** — 이 저장소에는 **뉴스 기사 본문이 들어 있지 않습니다.** 저작권이
+> 각 언론사에 있어 재배포하지 않습니다. 코퍼스는 `preprocessing/crawl.py` → `clean.py`로
+> 직접 수집합니다. 평가 파일에는 기사 제목과 관련성 판정 근거 문장(기사당 1~2문장)이
+> 남아 있는데, 이게 없으면 평가셋을 읽을 수 없기 때문입니다.
 
 ---
 
@@ -161,19 +159,35 @@ Hybrid가 하는 일이 정확히 그 재정렬입니다.
 
 ### 재현
 
-동결된 입력과 기존 판정으로 결과를 다시 만듭니다. **API를 호출하지 않습니다.**
+판정과 mapping이 동결돼 저장소에 있으므로 **지표 재계산은 API 없이 됩니다.** 판정이
+붙어 있던 후보 기사 본문은 저장소에 없지만, 어디서 왔는지는
+`blind_pool_50_sources.json`에 남아 있습니다 — 기사 371건의 URL·제목·날짜와, 동결 당시
+본문의 SHA-256.
 
 ```bash
-uv run python -m evaluation.final_evaluation
+uv run python -m evaluation.rebuild_pool        # URL에서 기사를 다시 받아 pool 복원 (6~7분)
+uv run python -m evaluation.final_evaluation    # 지표 재계산
 ```
 
-> ⚠️ **현재 이 명령은 무결성 검사에서 멈춥니다.** 두 manifest가 기록한
+이미 전체 수집을 해뒀다면 `--from-corpus`로 요청 없이 즉시 복원됩니다.
+
+`rebuild_pool`은 **기사별로** 기록된 해시와 대조하고 어느 기사가 달라졌는지 이름을
+댑니다. 파일 전체를 하나의 통과·실패로 보고하지 않는 이유는, 기사 한 건만 수정돼도
+전체 해시가 어긋나서 진단이 안 되기 때문입니다.
+
+> **시간이 지나면 일부는 되살아나지 않습니다.** 동결 이튿날 실측으로 371건 중 **365건이
+> 바이트 일치, 6건이 드리프트**(기사 수정), 삭제 0건이었습니다. 이 비율은 시간이 갈수록
+> 나빠집니다. 다만 **지표는 pool을 읽지 않습니다** — `final_evaluation`은 동결된 질문·
+> mapping·판정만으로 계산하고, 셋 다 기사 본문이 없어 저장소에 그대로 있습니다. 복원한
+> pool은 "어떤 기사를 두고 내린 판정인지" 읽어보기 위한 것입니다.
+
+> ⚠️ **현재 재계산 명령은 그 앞의 무결성 검사에서 멈춥니다.** 두 manifest가 기록한
 > `freeze_sha256`(`fee480d1…`)이 커밋된 `retrieval_eval_50.jsonl`의 실제 해시
-> (`bc5e5480…`)와 다릅니다. 평가 내용 자체는 온전합니다 — 질문 50개의 문구·유형·
-> seed 기사가 blind pool과 전부 일치하고 `combine`을 다시 돌리면 커밋본이 그대로
-> 재생성됩니다. pool을 만들 때 쓴 파일과 최종 커밋된 파일의 **직렬화만** 달랐던
-> 것으로 보입니다. 아래 결과 파일들은 그대로 유효하며 manifest의 해시를 실제 값으로
-> 갱신하면 이 명령도 다시 돕니다.
+> (`bc5e5480…`)와 다릅니다. 원인은 CRLF입니다 — 커밋본을 줄바꿈만 `\r\n`으로 바꿔
+> 해싱하면 기록된 값이 정확히 나옵니다. pool을 만든 환경의 파일이 Windows 줄바꿈이었고,
+> 이후 LF로 정규화된 버전이 커밋됐습니다. 평가 내용은 온전합니다(질문 문구·유형·seed
+> 기사가 blind pool과 전부 일치, `combine` 재실행 시 커밋본 그대로 재생성). manifest의
+> 해시를 실제 값으로 갱신하면 이 명령도 다시 돕니다.
 
 - [최종 aggregate 및 subgroup metrics](evaluation/results/retrieval_eval_50_metrics.json)
 - [질문별 짝지은 비교](evaluation/results/retrieval_eval_50_query_comparison.csv)
@@ -232,14 +246,20 @@ uv run python setup_api.py --check    # 현재 설정 진단 (아무것도 고�
 
 ### 3. 인덱스 만들기
 
-정제본 `data/processed/news_data_clean.json`(432건)은 저장소에 있으므로, 클론한 뒤
-바로 청킹·인덱싱을 돌릴 수 있습니다.
-
+기사 본문은 저장소에 없으므로 **수집부터 시작합니다.**
 
 ```bash
+uv run python preprocessing/crawl.py    # 네이버 금융에서 수집 (20~30분)
+uv run python preprocessing/clean.py    # 정제 → data/processed/news_data_clean.json
 uv run python indexing/chunk.py
 uv run python indexing/build_index.py --rebuild --batch-size 8 --device mps
 ```
+
+맛보기로 먼저 돌려보려면 `crawl.py`에 `--stocks 005930 --pages 2 --per-stock 5`를
+붙이세요. 수집이 중간에 끊겨도 `data/raw/crawl_cache/`에 종목별로 저장돼 이어받습니다
+(처음부터 받으려면 그 폴더를 지우세요). 같은 로직을 노트북
+(`preprocessing/crawler.ipynb`)에서도 쓸 수 있습니다 — 노트북은 이 스크립트를 불러
+쓰기만 하므로 코드가 두 벌이 아닙니다.
 
 `--device`는 `cpu` / `cuda`(NVIDIA) / `mps`(Apple Silicon). **CPU로는 1,377청크에 30분
 이상 걸리니 GPU가 있으면 반드시 지정하세요.** BGE-M3 최초 다운로드도 큽니다.
@@ -254,22 +274,11 @@ uv run python indexing/build_index.py --rebuild --batch-size 8 --device mps
 `data/processed/news_chunks.jsonl`과 `data/chroma/`는 재생성 가능한 대용량 산출물이라
 Git에서 제외합니다.
 
-**수집부터 다시 하려면** — 수집 원본은 기사 전문이라 저장소에 두지 않습니다. 정제
-규칙을 바꿔 `clean.py`를 다시 돌리려면 먼저 수집해야 합니다.
+종목 10개 × 목록 25페이지 × 최대 60건, 요청 간격 1초입니다.
 
-```bash
-uv run python preprocessing/crawl.py                                          # 전체 (20~30분)
-uv run python preprocessing/crawl.py --stocks 005930 --pages 2 --per-stock 5  # 맛보기
-uv run python preprocessing/clean.py                                          # 정제본 재생성
-```
-
-종목 10개 × 목록 25페이지 × 최대 60건, 요청 간격 1초입니다. 중간에 끊겨도
-`data/raw/crawl_cache/`에 종목별로 저장돼 있어 다시 실행하면 이어받습니다(처음부터
-받으려면 그 폴더를 지우세요). 같은 로직을 노트북(`preprocessing/crawler.ipynb`)에서도
-쓸 수 있습니다 — 노트북은 이 스크립트를 불러 쓰기만 하므로 코드가 두 벌이 아닙니다.
-
-> 다시 수집하면 기사가 수정·삭제되고 목록 순서도 바뀌어 **2026년 8월 코퍼스와 바이트
-> 단위로 같아지지 않습니다.** 동결된 평가를 재현하려면 저장소의 정제본을 그대로 쓰세요.
+> ⚠️ **지금 수집하면 2026년 8월 코퍼스와 같아지지 않습니다.** 기사가 수정·삭제되고 목록
+> 순서도 바뀝니다. 아래 「실험 결과」의 숫자는 그때의 432기사·1,377청크에 대한 것이고,
+> 새로 수집한 코퍼스로는 같은 값이 나오지 않습니다.
 
 ---
 
@@ -283,8 +292,9 @@ uv run python preprocessing/clean.py                                          # 
 | `uv run python cli.py "질문" --compare dense,hybrid` | 기법별 결과 나란히 비교 |
 | `uv run python indexing/search.py "질문" --top-k 5` | Dense 검색만 |
 | `uv run python preprocessing/crawl.py` | 뉴스 수집 (캐시 이어받기) |
-| `uv run python -m evaluation.final_evaluation` | 평가 결과 재생성 (API 호출 없음) |
-| `uv run pytest` | 테스트 387개 (API 호출 없음) |
+| `uv run python -m evaluation.rebuild_pool` | 기사 URL에서 blind pool 복원 |
+| `uv run python -m evaluation.final_evaluation` | 평가 지표 재계산 (API 호출 없음) |
+| `uv run pytest` | 테스트 400개 (API 호출 없음) |
 
 ### CLI
 
@@ -401,5 +411,5 @@ C 라이브러리가 필요해 `uv.lock` 재현성이 깨지므로 순수 wheel�
 
 ## 라이선스
 
-코드는 [MIT](LICENSE). `data/` 아래 뉴스 본문은 네이버 금융에서 수집한 것으로 각
-언론사에 저작권이 있으며 연구·평가 목적으로만 포함돼 있습니다.
+코드는 [MIT](LICENSE). 뉴스 기사 본문은 저작권이 각 언론사에 있어 이 저장소에 포함하지
+않습니다 — `preprocessing/crawl.py`로 각자 수집해 쓰세요.
